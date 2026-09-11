@@ -1,7 +1,10 @@
-import type { NextConfig } from "next";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const nextConfig: NextConfig = {
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   outputFileTracingRoot: path.resolve(__dirname, "../.."),
   transpilePackages: ["@igle/core", "@igle/shared", "@igle/html-engine"],
   webpack(config) {
