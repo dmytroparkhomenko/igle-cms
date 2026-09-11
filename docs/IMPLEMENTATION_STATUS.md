@@ -86,6 +86,7 @@ Observed in this environment:
 - After that fix, the Next.js production build stayed at "Creating an optimized production build ..." for several minutes in this environment and was stopped. Web production build is therefore not claimed verified.
 - Later Vitest reruns became unstable/silent after the stopped Next build, despite the previous passing run and direct JSON validation of the reported package file. This is recorded as an environment verification issue.
 - A later `pnpm smoke` run reached Node module loading and then failed with `ETIMEDOUT` while Node was reading module source. No application assertion failed in that run.
+- `pnpm --filter @igle/web dev` started the Next dev command but did not print readiness within roughly one minute in this environment, matching the same toolchain/runtime stall pattern. No local URL is claimed live from this run.
 
 Recommended verification commands:
 
