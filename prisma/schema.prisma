@@ -1,0 +1,463 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  administrator
+  editor
+}
+
+enum SiteStatus {
+  draft
+  published
+  archived
+}
+
+enum SourceType {
+  import
+  template
+  duplicate
+  blank
+}
+
+enum FieldState {
+  inherited
+  explicit
+  manual_source
+  absent
+  ambiguous
+}
+
+model User {
+  id                     String       @id
+  email                  String       @unique
+  name                   String
+  role                   UserRole
+  passwordHash           String
+  twoFactorSecret        String?
+  twoFactorEnabled       Boolean      @default(false)
+  requireTwoFactor       Boolean      @default(false)
+  lockedUntil            DateTime?
+  failedLoginWindowStartedAt DateTime?
+  failedLoginCount       Int          @default(0)
+  createdAt              DateTime     @default(now())
+  sessions               Session[]
+  siteAccess             SiteAccess[]
+  revisions              SiteRevision[]
+}
+
+model Session {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+}
+
+model SiteAccess {
+  id          String  @id
+  userId      String
+  siteId      String
+  canEditCode Boolean @default(false)
+  canDeploy   Boolean @default(false)
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site        Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, siteId])
+}
+
+model Site {
+  id                 String         @id
+  name               String
+  slug               String         @unique
+  domain             String?
+  alternateDomains   Json           @default("[]")
+  brandName          String?
+  country            String?
+  region             String?
+  city               String?
+  language           String
+  locale             String
+  urlStyle           String
+  wwwMode            String
+  https              Boolean        @default(true)
+  status             SiteStatus     @default(draft)
+  sourceType         SourceType
+  templateKey        String?
+  templateVersion    String?
+  duplicatedFromSiteId String?
+  duplicatedFromRevisionId String?
+  headRevisionId     String?
+  productionRevisionId String?
+  deploymentTargetId String?
+  tags               Json           @default("[]")
+  aiContext          Json?
+  affiliateOffers    Json?
+  seoLimits          Json
+  repoPath           String
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  lastDeployedAt     DateTime?
+  access             SiteAccess[]
+  pages              Page[]
+  revisions          SiteRevision[]
+  drafts             Draft[]
+  mediaAssets        MediaAsset[]
+  targets            DeploymentTarget[]
+}
+
+model Page {
+  id               String   @id
+  siteId           String
+  site             Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  filePath         String
+  route            String
+  internalName     String
+  pageType         String?
+  primaryKeyword   String?
+  seoTitle         String?
+  metaDescription  String?
+  h1               String?
+  canonical        String?
+  robots           String?
+  lang             String?
+  ogTitle          String?
+  ogDescription    String?
+  ogImage          String?
+  twitter          Json?
+  hreflang         Json?
+  schemaBlocks     Json?
+  fieldStates      Json
+  h1Count          Int      @default(0)
+  wordCount        Int      @default(0)
+  imagesCount      Int      @default(0)
+  imagesMissingAlt Int      @default(0)
+  internalLinksIn  Int      @default(0)
+  internalLinksOut Int      @default(0)
+  inSitemap        Boolean  @default(true)
+  fileHash         String
+  auditIssues      Json     @default("[]")
+  lastRevisionId   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([siteId, filePath])
+}
+
+model SiteRevision {
+  id               String   @id
+  siteId           String
+  site             Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  revisionNumber   Int
+  parentRevisionId String?
+  commitSha        String
+  createdByUserId  String?
+  createdByUser    User?    @relation(fields: [createdByUserId], references: [id])
+  source           String
+  title            String
+  description      String?
+  filesChanged     Json
+  createdAt        DateTime @default(now())
+
+  @@unique([siteId, revisionNumber])
+  @@unique([siteId, commitSha])
+}
+
+model Draft {
+  id        String   @id
+  siteId    String
+  userId    String
+  filePath  String
+  baseHash  String
+  content   String
+  updatedAt DateTime @updatedAt
+  site      Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, userId, filePath])
+}
+
+model Template {
+  id        String            @id
+  key       String            @unique
+  name      String
+  createdAt DateTime          @default(now())
+  versions  TemplateVersion[]
+}
+
+model TemplateVersion {
+  id         String   @id
+  templateId String
+  version    String
+  path       String
+  manifest   Json
+  createdAt  DateTime @default(now())
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+}
+
+model MediaAsset {
+  id        String       @id
+  siteId    String
+  path      String
+  mimeType  String
+  byteSize  Int
+  hash      String
+  createdAt DateTime     @default(now())
+  site      Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  usages    AssetUsage[]
+}
+
+model AssetUsage {
+  id       String     @id
+  assetId  String
+  pageId   String?
+  filePath String
+  asset    MediaAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+}
+
+model Server {
+  id                    String             @id
+  name                  String
+  host                  String
+  port                  Int                @default(22)
+  username              String
+  privateKeyEncrypted   String
+  passphraseEncrypted   String?
+  publicKey             String
+  hostKeyFingerprint    String?
+  webRootBase           String
+  nginxIncludeDir       String
+  useSudo               Boolean            @default(false)
+  webServer             String             @default("nginx")
+  lastCheck             Json?
+  deploymentTargets     DeploymentTarget[]
+}
+
+model DeploymentTarget {
+  id                 String       @id
+  siteId             String
+  serverId           String
+  name               String
+  isDefault          Boolean      @default(false)
+  remoteDirectory    String
+  sslEnabled         Boolean      @default(true)
+  sslExpiresAt       DateTime?
+  keepReleases       Int          @default(10)
+  healthCheckPath    String       @default("/")
+  healthCheckStatus  String?
+  autoRollback       Boolean      @default(true)
+  provisionedAt      DateTime?
+  nginxConfigHash    String?
+  site               Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  server             Server       @relation(fields: [serverId], references: [id])
+  deployments        Deployment[]
+}
+
+model Build {
+  id          String   @id
+  siteId      String
+  revisionId  String
+  path        String
+  status      String
+  log         Json     @default("[]")
+  createdAt   DateTime @default(now())
+}
+
+model Deployment {
+  id          String          @id
+  siteId      String
+  targetId    String
+  revisionId  String
+  status      String
+  releasePath String?
+  createdAt   DateTime        @default(now())
+  completedAt DateTime?
+  target      DeploymentTarget @relation(fields: [targetId], references: [id])
+  logs        DeploymentLog[]
+}
+
+model DeploymentLog {
+  id           String     @id
+  deploymentId String
+  level        String
+  message      String
+  createdAt    DateTime   @default(now())
+  deployment   Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+}
+
+model SiteVerification {
+  id        String   @id
+  siteId    String
+  provider  String
+  filePath  String?
+  metaName  String?
+  contentHash String
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model SiteIntegration {
+  id                         String                 @id
+  siteId                     String
+  provider                   String
+  enabled                    Boolean                @default(false)
+  encryptedConfiguration     String?
+  status                     String
+  draftRevisionId            String?
+  productionRevisionId       String?
+  lastVerifiedAt             DateTime?
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+  operations                 IntegrationOperation[]
+}
+
+model IntegrationOperation {
+  id                String          @id
+  siteIntegrationId String
+  operation         String
+  revisionId        String?
+  status            String
+  log               Json            @default("[]")
+  createdAt         DateTime        @default(now())
+  siteIntegration   SiteIntegration @relation(fields: [siteIntegrationId], references: [id], onDelete: Cascade)
+}
+
+model CustomScript {
+  id        String   @id
+  siteId    String
+  name      String
+  placement String
+  environment String
+  createdAt DateTime @default(now())
+}
+
+model Redirect {
+  id     String @id
+  siteId String
+  from   String
+  to     String
+  status Int    @default(301)
+}
+
+model AIProviderConfiguration {
+  id          String @id
+  name        String
+  provider    String
+  baseUrl     String?
+  apiKeyEncrypted String
+  enabled     Boolean @default(true)
+}
+
+model AITaskConfig {
+  id       String @id
+  task     String @unique
+  model    String
+  providerId String
+  budgetCapPercent Int @default(100)
+  enabled  Boolean @default(true)
+}
+
+model PromptTemplate {
+  id       String          @id
+  task     String
+  name     String
+  versions PromptVersion[]
+}
+
+model PromptVersion {
+  id               String         @id
+  promptTemplateId String
+  version          Int
+  content          String
+  schema           Json?
+  createdAt        DateTime       @default(now())
+  promptTemplate   PromptTemplate @relation(fields: [promptTemplateId], references: [id], onDelete: Cascade)
+}
+
+model AIGeneration {
+  id        String   @id
+  siteId    String
+  pageId    String?
+  task      String
+  tokens    Int
+  cost      Decimal
+  latencyMs Int
+  status    String
+  createdAt DateTime @default(now())
+}
+
+model AISuggestion {
+  id                String   @id
+  siteId            String
+  pageId            String?
+  jobId             String?
+  task              String
+  field             String
+  currentValue      String?
+  proposedValue     String
+  validationNotes   String?
+  status            String
+  decidedByUserId   String?
+  decidedAt         DateTime?
+}
+
+model Generation {
+  id        String   @id
+  siteId    String?
+  status    String
+  state     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Import {
+  id        String   @id
+  siteId    String?
+  status    String
+  report    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Job {
+  id        String   @id
+  type      String
+  status    String
+  progress  Int      @default(0)
+  message   String?
+  logs      Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id        String   @id
+  userId    String?
+  type      String
+  title     String
+  body      String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id
+  actorId   String?
+  action    String
+  targetType String
+  targetId  String?
+  details   Json     @default("{}")
+  createdAt DateTime @default(now())
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}

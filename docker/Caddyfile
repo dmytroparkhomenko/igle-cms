@@ -1,0 +1,9 @@
+:80 {
+  handle_path /preview/* {
+    reverse_proxy preview:3001
+  }
+
+  handle {
+    reverse_proxy web:3000
+  }
+}

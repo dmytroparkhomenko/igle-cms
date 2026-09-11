@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@igle/shared": ["packages/shared/src/index.ts"],
+      "@igle/core": ["packages/core/src/index.ts"],
+      "@igle/html-engine": ["packages/html-engine/src/index.ts"],
+      "@igle/build": ["packages/build/src/index.ts"],
+      "@igle/deployer": ["packages/deployer/src/index.ts"],
+      "@igle/integrations": ["packages/integrations/src/index.ts"],
+      "@igle/ai": ["packages/ai/src/index.ts"],
+      "@igle/templates": ["packages/templates/src/index.ts"]
+    }
+  }
+}
