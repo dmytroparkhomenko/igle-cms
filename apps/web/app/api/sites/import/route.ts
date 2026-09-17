@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../lib/runtime";
-import { requireActor } from "../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -34,14 +34,14 @@ export async function POST(request: Request) {
     }
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/sites?imported=${encodeURIComponent(site.slug)}`, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(`/sites?imported=${encodeURIComponent(site.slug)}`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ site, revisionNumber, report }, { status: 201 });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/sites?importError=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/sites?importError=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { runtime } from "./lib/runtime";
-import { SESSION_COOKIE } from "./lib/session";
+import { resolveRequestOrigin, SESSION_COOKIE } from "./lib/session";
 
 // Real session validation needs file-system access to the state store — not available on the
 // default Edge runtime, so this middleware runs as plain Node.js (stable since Next.js 15.2).
@@ -22,7 +22,7 @@ export async function middleware(request: NextRequest) {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Please log in." } }, { status: 401 });
       }
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/login", resolveRequestOrigin(request));
       return NextResponse.redirect(loginUrl);
     }
   }

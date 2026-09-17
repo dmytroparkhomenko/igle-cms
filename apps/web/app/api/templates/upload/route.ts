@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../lib/runtime";
-import { requireActor } from "../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -35,14 +35,14 @@ export async function POST(request: Request) {
     );
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/templates/${key}?uploaded=1`, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(`/templates/${key}?uploaded=1`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ key, report }, { status: 201 });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/templates/upload?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/templates/upload?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

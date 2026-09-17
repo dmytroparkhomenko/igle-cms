@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runtime } from "../../../../lib/runtime";
-import { SESSION_COOKIE, clearSessionCookie } from "../../../../lib/session";
+import { SESSION_COOKIE, clearSessionCookie , resolveRequestOrigin} from "../../../../lib/session";
 import { cookies } from "next/headers";
 
 export async function POST(request: Request) {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
   const accept = request.headers.get("accept") ?? "";
   if (accept.includes("text/html")) {
-    return NextResponse.redirect(new URL("/login", request.url), { status: 303 });
+    return NextResponse.redirect(new URL("/login", resolveRequestOrigin(request)), { status: 303 });
   }
   return NextResponse.json({ ok: true });
 }

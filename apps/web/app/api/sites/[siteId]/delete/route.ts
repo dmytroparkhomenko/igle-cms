@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
-import { requireActor } from "../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ siteId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -17,14 +17,14 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     await runtime.siteService.deleteSite(site, confirmSlug, (await requireActor()));
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/sites?deleted=${encodeURIComponent(site.slug)}`, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(`/sites?deleted=${encodeURIComponent(site.slug)}`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/sites/${siteId}?deleteError=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/sites/${siteId}?deleteError=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

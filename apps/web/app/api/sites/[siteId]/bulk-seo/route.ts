@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import type { BulkSeoRow } from "@igle/core";
 import { runtime } from "../../../../../lib/runtime";
-import { requireActor } from "../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../lib/session";
 
 const FIELD_PATTERN = /^(seoTitle|metaDescription|h1)\[(.+)\]$/;
 
@@ -31,7 +31,7 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const result = await runtime.seoService.bulkUpdateFields(site, [...rowsByPageId.values()], (await requireActor()), { fillEmptyOnly });
 
     if (wantsRedirect) {
-      const url = new URL(`/sites/${site.id}/bulk-seo`, request.url);
+      const url = new URL(`/sites/${site.id}/bulk-seo`, resolveRequestOrigin(request));
       url.searchParams.set("updated", String(result.revisionNumber));
       url.searchParams.set("skipped", String(result.skipped.length));
       return NextResponse.redirect(url, { status: 303 });
@@ -41,7 +41,7 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/sites/${siteId}/bulk-seo?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/sites/${siteId}/bulk-seo?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@igle/shared";
 import { runtime } from "../../../../lib/runtime";
-import { createSessionCookie } from "../../../../lib/session";
+import { createSessionCookie , resolveRequestOrigin} from "../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -16,14 +16,14 @@ export async function POST(request: Request) {
     await createSessionCookie(sessionId, request);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL("/", request.url), { status: 303 });
+      return NextResponse.redirect(new URL("/", resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/login?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/login?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

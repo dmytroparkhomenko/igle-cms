@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../../../../lib/runtime";
-import { requireActor } from "../../../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ siteId: string; verificationId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -22,14 +22,14 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
       const url = result.ok
         ? `/sites/${site.id}/scripts?checkedOk=1`
         : `/sites/${site.id}/scripts?checkedError=${encodeURIComponent(result.error ?? "Not reachable.")}`;
-      return NextResponse.redirect(new URL(url, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(url, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json(result);
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/sites/${siteId}/scripts?verificationError=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/sites/${siteId}/scripts?verificationError=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

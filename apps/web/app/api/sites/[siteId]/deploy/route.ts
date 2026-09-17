@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
-import { requireActor } from "../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ siteId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -19,14 +19,14 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
         deployment.status === "success"
           ? `/sites/${site.id}?deployed=${deployment.revisionNumber}`
           : `/sites/${site.id}?deployError=${encodeURIComponent(deployment.error ?? "Deployment failed.")}`;
-      return NextResponse.redirect(new URL(url, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(url, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ deployment });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/sites/${siteId}?deployError=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/sites/${siteId}?deployError=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

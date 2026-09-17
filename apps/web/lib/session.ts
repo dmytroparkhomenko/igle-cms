@@ -30,6 +30,24 @@ export async function requireActor(): Promise<Actor> {
   return actor;
 }
 
+/**
+ * The origin (scheme + host) a browser actually used to reach this request. Self-hosted behind a
+ * reverse proxy (Caddy, then aaPanel's own nginx, then whatever the visitor typed), a Route
+ * Handler's own `request.url` can reflect the app's internal bind address — e.g.
+ * "http://localhost:3000" — rather than the public-facing one, which turns every
+ * `NextResponse.redirect(new URL(path, request.url))` into a redirect to a host the visitor's
+ * browser can't reach. Reading the actual forwarded headers (which Caddy sets by default) instead
+ * of trusting request.url's parsed origin fixes every one of those redirects at once.
+ */
+export function resolveRequestOrigin(request: Request): string {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host");
+  if (!host) return new URL(request.url).origin;
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwardedProto || (new URL(request.url).protocol === "https:" ? "https" : "http");
+  return `${protocol}://${host}`;
+}
+
 export async function createSessionCookie(sessionId: string, request: Request): Promise<void> {
   // NODE_ENV is "production" under `next start` regardless of whether this request actually
   // arrived over HTTPS — a Secure cookie set for a plain-HTTP request is silently dropped by

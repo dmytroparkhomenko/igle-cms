@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@igle/shared";
 import { runtime } from "../../../../../../lib/runtime";
-import { requireActor } from "../../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ userId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -17,14 +17,14 @@ export async function POST(request: Request, context: { params: Promise<{ userId
     await runtime.authService.updateTeamMemberRole(userId, role, actor);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL("/team?updated=1", request.url), { status: 303 });
+      return NextResponse.redirect(new URL("/team?updated=1", resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/team?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/team?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

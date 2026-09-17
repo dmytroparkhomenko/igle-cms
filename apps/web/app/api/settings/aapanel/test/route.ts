@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runtime } from "../../../../../lib/runtime";
-import { requireActor } from "../../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const url = result.ok
       ? `/servers?testOk=${result.siteCount ?? 0}`
       : `/servers?error=${encodeURIComponent(result.error ?? "Connection test failed.")}`;
-    return NextResponse.redirect(new URL(url, request.url), { status: 303 });
+    return NextResponse.redirect(new URL(url, resolveRequestOrigin(request)), { status: 303 });
   }
   return NextResponse.json(result);
 }

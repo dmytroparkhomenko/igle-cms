@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import type { TicketPriority, TicketSpecialistType, TicketStatus } from "@igle/core";
 import { runtime } from "../../../../../lib/runtime";
+import { resolveRequestOrigin } from "../../../../../lib/session";
 
 const statuses: TicketStatus[] = ["open", "in-progress", "done", "cancelled"];
 const specialistTypes: TicketSpecialistType[] = ["developer", "designer", "seo", "copywriter"];
@@ -33,14 +34,14 @@ export async function POST(request: Request, context: { params: Promise<{ ticket
     });
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/tickets/${ticketId}?updated=1`, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(`/tickets/${ticketId}?updated=1`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/tickets/${ticketId}?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`/tickets/${ticketId}?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

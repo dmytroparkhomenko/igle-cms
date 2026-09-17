@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../lib/runtime";
-import { requireActor } from "../../../../lib/session";
+import { requireActor , resolveRequestOrigin} from "../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/sites/${site.id}`, request.url), { status: 303 });
+      return NextResponse.redirect(new URL(`/sites/${site.id}`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ site }, { status: 201 });
   } catch (error) {
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     if (wantsRedirect) {
       const backTo = templateKey ? `/templates/${templateKey}` : "/templates";
       return NextResponse.redirect(
-        new URL(`${backTo}?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        new URL(`${backTo}?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }
