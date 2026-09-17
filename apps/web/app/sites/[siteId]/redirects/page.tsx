@@ -91,7 +91,7 @@ export default async function RedirectsPage({
         <label className="muted" htmlFor="status">
           Status
         </label>
-        <select id="status" name="status" defaultValue="301" style={selectStyle}>
+        <select id="status" name="status" defaultValue="301">
           <option value="301">301 — Permanent</option>
           <option value="302">302 — Temporary</option>
         </select>
@@ -103,13 +103,3 @@ export default async function RedirectsPage({
     </>
   );
 }
-
-const selectStyle = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid var(--line)",
-  font: "inherit",
-  background: "var(--panel)",
-  color: "var(--text)"
-} as const;

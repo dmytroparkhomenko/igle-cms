@@ -319,6 +319,184 @@ export interface StructuralPatch {
   styleProperty?: string;
 }
 
+/** Finds the outer HTML of the first `<tagName>` element in a page — used to seed a shared-navigation editor with real current markup. */
+export function extractFirstElementByTag(html: string, tagName: string): string | undefined {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const [target] = findElements(document, tagName);
+  const location = target?.sourceCodeLocation;
+  if (!location) return undefined;
+  return html.slice(location.startOffset, location.endOffset);
+}
+
+/**
+ * Replaces the first `<tagName>` element's entire outer HTML with `newOuterHtml` — the mechanism
+ * behind site-wide navigation editing (SOT: real sites duplicate header/footer markup on every
+ * page rather than sharing a template partial, so "edit the header once" means finding and
+ * replacing that same element on every page's own file, not editing a single shared source).
+ */
+export function replaceElementByTag(html: string, tagName: string, newOuterHtml: string): { html: string; found: boolean } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const [target] = findElements(document, tagName);
+  const location = target?.sourceCodeLocation;
+  if (!location) return { html, found: false };
+  const ms = new TextPatcher(html);
+  ms.overwrite(location.startOffset, location.endOffset, newOuterHtml);
+  return { html: ms.toString(), found: true };
+}
+
+/** Reads one element's current attribute value, located by node id — used to capture an "old" value (e.g. an image's src) before a patch overwrites it, so other places that shared that same value can be found afterward. */
+export function getNodeAttribute(html: string, nodeId: number, attrName: string): string | undefined {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  let target: ElementNode | undefined;
+  walkElementsWithId(document, (node, id) => {
+    if (id === nodeId) target = node;
+  });
+  return attr(target, attrName);
+}
+
+/** Reads one element's tag name, located by node id — used to check e.g. "is this the src of an <img>?" before deciding whether a setAttr patch should trigger site-wide image propagation. */
+export function getNodeTagName(html: string, nodeId: number): string | undefined {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  let tagName: string | undefined;
+  walkElementsWithId(document, (node, id) => {
+    if (id === nodeId) tagName = node.tagName;
+  });
+  return tagName;
+}
+
+/**
+ * Splits a page into what comes before its `<header>`, the markup between `</header>` and
+ * `<footer>`, and what comes after — the code editor shows and edits only the middle: header and
+ * footer are shared across every page and edited once on the dedicated screen, so exposing them
+ * again in each page's own source view is both redundant and a way to accidentally fork them.
+ * Falls back to treating the whole document as "middle" when a page has neither element.
+ */
+export function extractPageBodyMiddle(html: string): { before: string; middle: string; after: string } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const [headerNode] = findElements(document, "header");
+  const [footerNode] = findElements(document, "footer");
+  const headerEnd = headerNode?.sourceCodeLocation?.endOffset;
+  const footerStart = footerNode?.sourceCodeLocation?.startOffset;
+  const start = typeof headerEnd === "number" ? headerEnd : 0;
+  const end = typeof footerStart === "number" && footerStart >= start ? footerStart : html.length;
+  return { before: html.slice(0, start), middle: html.slice(start, end), after: html.slice(end) };
+}
+
+/** Rebuilds a full page from a possibly-edited middle, keeping the surrounding header/footer bytes exactly as they were read from disk. */
+export function replacePageBodyMiddle(html: string, newMiddle: string): string {
+  const { before, after } = extractPageBodyMiddle(html);
+  return `${before}${newMiddle}${after}`;
+}
+
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
+const REWRITABLE_ATTRS: Array<{ tag: string; attrName: string }> = [
+  { tag: "a", attrName: "href" },
+  { tag: "link", attrName: "href" },
+  { tag: "script", attrName: "src" },
+  { tag: "img", attrName: "src" }
+];
+
+function isRewritableRelativeUrl(value: string | undefined): value is string {
+  if (!value) return false;
+  if (value.startsWith("/") || value.startsWith("#")) return false;
+  if (URL_SCHEME_PATTERN.test(value)) return false; // http:, https:, mailto:, tel:, javascript:, data:, etc.
+  return true;
+}
+
+/** Resolves a relative reference against an absolute base path exactly like a browser would (WHATWG URL algorithm) — used both to compute "resolved relative to this page's own nested position" and "resolved as if the page were at the site root," so a caller can compare the two. */
+export function resolveRelativeReference(value: string, baseAbsolutePath: string): string {
+  const resolved = new URL(value, `http://igle-internal.invalid${baseAbsolutePath}`);
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+}
+
+export interface RelativeReference {
+  tag: string;
+  attrName: string;
+  value: string;
+}
+
+/** Finds the distinct relative (non-absolute, non-external) href/src values used on a page — nav links, the canonical tag, stylesheets, scripts, images. Pure/read-only. */
+export function findRelativeReferences(html: string): RelativeReference[] {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const seen = new Set<string>();
+  const results: RelativeReference[] = [];
+  for (const { tag, attrName } of REWRITABLE_ATTRS) {
+    for (const node of findElements(document, tag)) {
+      const value = attr(node, attrName);
+      if (!isRewritableRelativeUrl(value)) continue;
+      const key = `${tag}:${attrName}:${value}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      results.push({ tag, attrName, value });
+    }
+  }
+  return results;
+}
+
+/**
+ * Rewrites href/src values found by findRelativeReferences, using `resolve` to decide each
+ * value's final absolute form (return the same value, or undefined, to leave it untouched). A
+ * relative reference like "bono/" or "./bono/" only resolves correctly from a page whose URL
+ * happens to sit at exactly the depth the author assumed — often the site root, sometimes not,
+ * depending on how the markup was authored — so the actual resolution decision (page-relative vs.
+ * root-relative vs. left alone) is the caller's to make; this just applies it.
+ */
+export function absolutizeRelativeReferences(
+  html: string,
+  resolve: (reference: RelativeReference) => string | undefined
+): { html: string; count: number } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  let count = 0;
+
+  for (const { tag, attrName } of REWRITABLE_ATTRS) {
+    for (const node of findElements(document, tag)) {
+      const value = attr(node, attrName);
+      if (!isRewritableRelativeUrl(value)) continue;
+      const resolved = resolve({ tag, attrName, value });
+      if (resolved === undefined || resolved === value) continue;
+      const range = attrValueRange(node, attrName, html);
+      if (!range) continue;
+      ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), attrName, resolved));
+      count += 1;
+    }
+  }
+
+  return { html: ms.toString(), count };
+}
+
+/**
+ * Replaces the `src` of every `<img>` whose current src exactly equals `oldSrc` — the mechanism
+ * behind site-wide image replacement (a logo or hero image reused across many pages gets updated
+ * everywhere it appears, not just on the page where the edit started). Also strips any `srcset`
+ * on those elements: a browser prefers `srcset` over `src` whenever both are present, so a stale
+ * `srcset` left pointing at the old image would make the `src` swap invisible.
+ */
+export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: string): { html: string; count: number } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  let count = 0;
+  for (const node of findElements(document, "img")) {
+    if (attr(node, "src") !== oldSrc) continue;
+    const range = attrValueRange(node, "src", html);
+    if (!range) continue;
+    ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "src", newSrc));
+    removeAttributeFromNode(ms, html, node, "srcset");
+    count += 1;
+  }
+  return { html: ms.toString(), count };
+}
+
+function removeAttributeFromNode(ms: TextPatcher, html: string, node: ElementNode, attrName: string): void {
+  const loc = node.sourceCodeLocation?.startTag ?? node.sourceCodeLocation;
+  if (!loc) return;
+  const tagSource = html.slice(loc.startOffset, loc.endOffset);
+  const match = new RegExp(`\\s${attrName}\\s*=\\s*("[^"]*"|'[^']*')`, "i").exec(tagSource);
+  if (match && match.index !== undefined) {
+    ms.remove(loc.startOffset + match.index, loc.startOffset + match.index + match[0].length);
+  }
+}
+
 /**
  * Applies one or more edits located by node id (from annotateNodesForEditing / ParsedImage.nodeId)
  * in a single pass, so a batch of visual-editor changes lands as one minimal set of splices and
@@ -367,13 +545,7 @@ export function applyStructuralPatches(html: string, patches: StructuralPatch[])
 
     if (patch.op === "removeAttr") {
       if (!patch.attrName) throw new IgleError("INVALID_PATCH", "attrName is required for removeAttr.", 400);
-      const loc = target.sourceCodeLocation?.startTag ?? target.sourceCodeLocation;
-      if (!loc) continue;
-      const tagSource = html.slice(loc.startOffset, loc.endOffset);
-      const match = new RegExp(`\\s${patch.attrName}\\s*=\\s*("[^"]*"|'[^']*')`, "i").exec(tagSource);
-      if (match && match.index !== undefined) {
-        ms.remove(loc.startOffset + match.index, loc.startOffset + match.index + match[0].length);
-      }
+      removeAttributeFromNode(ms, html, target, patch.attrName);
     }
 
     if (patch.op === "removeNode") {

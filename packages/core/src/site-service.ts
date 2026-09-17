@@ -58,6 +58,7 @@ export class SiteService {
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
       sitemap: { enabled: true },
       robots: { mode: "cms-generated" },
+      metaRobots: "index",
       createdAt: now,
       updatedAt: now
     };
@@ -219,9 +220,69 @@ export class SiteService {
     }
   }
 
+  /**
+   * The explicit, user-triggered counterpart to the soft cascade above: rewrites <html lang> on
+   * EVERY page to the site's current effective language, including pages that already have their
+   * own explicit override — those become "inherited" again, tracking the site default going
+   * forward. Uses whatever is already saved in site settings, not any unsaved form input.
+   */
+  async reapplyLanguageToAllPages(site: SiteRecord, actor: Actor): Promise<{ revisionNumber: number; updatedPageIds: string[] }> {
+    assertCan(actor, "sites.edit", site.id);
+    const effectiveLang = effectiveSiteLanguageTag(site.metadata);
+    const state = await this.stateStore.read();
+    const pages = state.pages.filter((page) => page.siteId === site.id && !page.deletedAt);
+    const updatedPageIds: string[] = [];
+
+    for (const page of pages) {
+      const filePath = resolveInside(site.repoPath, page.filePath);
+      try {
+        const original = await fs.readFile(filePath, "utf8");
+        const result = applyPageSEO(original, { lang: effectiveLang });
+        await fs.writeFile(filePath, result.html, "utf8");
+        updatedPageIds.push(page.id);
+      } catch {
+        // best-effort: a page that can't be read/patched is skipped rather than failing the whole run
+      }
+    }
+
+    if (updatedPageIds.length === 0) {
+      const existing = await this.revisionService.latest(site.id);
+      return { revisionNumber: existing?.revisionNumber ?? 0, updatedPageIds };
+    }
+
+    await this.stateStore.update((current) => {
+      for (const record of current.pages) {
+        if (updatedPageIds.includes(record.id)) {
+          record.lang = effectiveLang;
+          record.fieldStates.lang = "inherited";
+        }
+      }
+    });
+
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "site-settings",
+      title: `Rewrote <html lang> to "${effectiveLang}" on ${updatedPageIds.length} page(s)`,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    site.headRevisionId = revision.id;
+    await this.stateStore.update((state) => {
+      const existing = state.sites.find((item) => item.id === site.id);
+      if (existing) existing.headRevisionId = revision.id;
+    });
+
+    return { revisionNumber: revision.revisionNumber, updatedPageIds };
+  }
+
   async updateSitemapAndRobots(
     site: SiteRecord,
-    input: { sitemapEnabled: boolean; robotsMode: "cms-generated" | "manual"; robotsContent?: string },
+    input: {
+      sitemapEnabled: boolean;
+      robotsMode: "cms-generated" | "manual";
+      robotsContent?: string;
+      metaRobots?: "index" | "noindex";
+    },
     actor: Actor
   ): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.edit", site.id);
@@ -232,6 +293,7 @@ export class SiteService {
       ...site.metadata,
       sitemap: { ...site.metadata.sitemap, enabled: input.sitemapEnabled },
       robots,
+      metaRobots: input.metaRobots ?? site.metadata.metaRobots,
       updatedAt: new Date().toISOString()
     };
 

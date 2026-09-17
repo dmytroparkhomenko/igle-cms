@@ -15,6 +15,14 @@ export default async function VisualEditorPage({ params }: { params: Promise<{ s
   if (page.deletedAt) redirect(`/sites/${site.id}/trash`);
 
   const previewOrigin = process.env.PREVIEW_ORIGIN ?? "http://localhost:3001";
+  // A page stored at e.g. "folder/index.html" gets the route "/folder/index" — technically
+  // accurate to the file, but not the URL the folder actually resolves to on a static host
+  // (and not what any hand-written link on the page points at, e.g. "./folder/"). The link
+  // picker deals in the URL a visitor would actually use, so it canonicalizes that one case.
+  const pages = state.pages
+    .filter((item) => item.siteId === site.id && !item.deletedAt)
+    .map((item) => ({ id: item.id, route: item.route.replace(/\/index$/i, "/") || "/", internalName: item.internalName }))
+    .sort((a, b) => a.route.localeCompare(b.route));
 
   return (
     <>
@@ -33,6 +41,7 @@ export default async function VisualEditorPage({ params }: { params: Promise<{ s
         pageId={page.id}
         pageRoute={page.route}
         previewOrigin={previewOrigin}
+        pages={pages}
       />
     </>
   );

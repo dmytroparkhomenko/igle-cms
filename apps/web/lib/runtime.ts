@@ -1,4 +1,5 @@
 import path from "node:path";
+import { AffiliateLinkService } from "../../../packages/core/src/affiliate-link-service";
 import { AuthService } from "../../../packages/core/src/auth-service";
 import { DeployService } from "../../../packages/core/src/deploy-service";
 import { DraftService } from "../../../packages/core/src/draft-service";
@@ -37,6 +38,7 @@ const redirectService = new RedirectService(revisionService);
 const scriptService = new ScriptService(revisionService);
 const templateService = new TemplateService(templatesDir, customTemplatesDir, dataDir, stateStore, revisionService);
 const verificationService = new VerificationService(revisionService);
+const affiliateLinkService = new AffiliateLinkService(stateStore);
 
 // First-run bootstrap: with no users yet, ADMIN_EMAIL/ADMIN_PASSWORD (set once in .env) creates
 // the first administrator and seeds the shared team password. A no-op on every run after that.
@@ -77,5 +79,6 @@ export const runtime = {
   scriptService,
   templateService,
   verificationService,
-  serverService
+  serverService,
+  affiliateLinkService
 };

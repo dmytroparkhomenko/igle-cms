@@ -1,7 +1,5 @@
-import fs from "node:fs/promises";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { resolveInside } from "@igle/shared";
 import { runtime } from "../../../../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../../../../lib/session";
 
@@ -14,14 +12,15 @@ export default async function CodeEditor({
 }) {
   const { siteId, pageId } = await params;
   const { updated, error } = await searchParams;
-  const site = await runtime.siteService.get(siteId, (await requireActorOrRedirect()));
+  const actor = await requireActorOrRedirect();
+  const site = await runtime.siteService.get(siteId, actor);
   if (!site) notFound();
 
   const state = await runtime.stateStore.read();
   const page = state.pages.find((item) => item.siteId === site.id && item.id === pageId);
   if (!page) notFound();
 
-  const content = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
+  const content = await runtime.seoService.getBodyMiddle(site, pageId, actor);
 
   return (
     <>
@@ -36,9 +35,14 @@ export default async function CodeEditor({
       </div>
 
       <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
-        Direct source changes can override structured CMS settings. Igle CMS re-indexes this file after
-        saving and creates a new revision; any field that no longer matches what the CMS last wrote becomes
-        <strong> Manual Source</strong>.
+        This shows only the page's own content — everything between the header and footer. The header and
+        footer are shared across every page and are edited once on the{" "}
+        <Link href={`/sites/${site.id}/header-footer`} style={{ color: "inherit", textDecoration: "underline" }}>
+          Header/Footer
+        </Link>{" "}
+        screen. Direct source changes can override structured CMS settings. Igle CMS re-indexes this file
+        after saving and creates a new revision; any field that no longer matches what the CMS last wrote
+        becomes <strong>Manual Source</strong>.
       </article>
 
       {updated ? (

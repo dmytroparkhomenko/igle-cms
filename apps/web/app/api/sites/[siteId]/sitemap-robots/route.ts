@@ -16,8 +16,9 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const robotsMode = form.get("robotsMode") === "manual" ? "manual" : "cms-generated";
     const robotsContent = String(form.get("robotsContent") ?? "");
     const sitemapEnabled = form.get("sitemapEnabled") === "on";
+    const metaRobots = form.get("metaRobots") === "noindex" ? "noindex" : "index";
 
-    await runtime.siteService.updateSitemapAndRobots(site, { sitemapEnabled, robotsMode, robotsContent }, (await requireActor()));
+    await runtime.siteService.updateSitemapAndRobots(site, { sitemapEnabled, robotsMode, robotsContent, metaRobots }, (await requireActor()));
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL(`/sites/${site.id}?updated=1`, request.url), { status: 303 });

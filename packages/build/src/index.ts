@@ -65,6 +65,9 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
     const sitemapLine = site.sitemap.enabled ? `Sitemap: ${canonicalBase(site, input.productionBaseUrl)}/sitemap.xml\n` : "";
     await fs.writeFile(path.join(buildPath, "robots.txt"), `User-agent: *\nAllow: /\n${sitemapLine}`, "utf8");
   }
+  if (site.metaRobots === "noindex") {
+    await injectNoindexMeta(buildPath);
+  }
 
   const issues = await validateBuild(buildPath);
   const footprintIssues = await scanFootprint(buildPath);
@@ -137,6 +140,19 @@ async function injectScripts(
       html = injectScript(html, script.placement, script.code);
     }
     await fs.writeFile(absolutePath, html, "utf8");
+  }
+}
+
+/** Adds `<meta name="robots" content="noindex">` to every page that doesn't already declare its own robots meta tag — a page with an explicit tag (set per-page in the SEO fields) keeps controlling its own indexing. */
+async function injectNoindexMeta(buildPath: string): Promise<void> {
+  const htmlFiles = (await listFiles(buildPath)).filter((filePath) => [".html", ".htm"].includes(path.extname(filePath).toLowerCase()));
+  for (const filePath of htmlFiles) {
+    const absolutePath = path.join(buildPath, filePath);
+    const html = await fs.readFile(absolutePath, "utf8");
+    if (/<meta\s+[^>]*name\s*=\s*["']robots["']/i.test(html)) continue;
+    if (!/<head[ >]/i.test(html)) continue;
+    const updated = html.replace(/<head([^>]*)>/i, `<head$1>\n<meta name="robots" content="noindex">`);
+    await fs.writeFile(absolutePath, updated, "utf8");
   }
 }
 

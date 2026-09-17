@@ -87,7 +87,7 @@ export default async function TicketDetailPage({
           <label className="muted" htmlFor="status">
             Status
           </label>
-          <select id="status" name="status" defaultValue={ticket.status} style={selectStyle}>
+          <select id="status" name="status" defaultValue={ticket.status}>
             <option value="open">Open</option>
             <option value="in-progress">In progress</option>
             <option value="done">Done</option>
@@ -98,7 +98,7 @@ export default async function TicketDetailPage({
           <label className="muted" htmlFor="priority">
             Priority
           </label>
-          <select id="priority" name="priority" defaultValue={ticket.priority} style={selectStyle}>
+          <select id="priority" name="priority" defaultValue={ticket.priority}>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
             <option value="high">High</option>
@@ -109,7 +109,7 @@ export default async function TicketDetailPage({
           <label className="muted" htmlFor="specialistType">
             Assigned to
           </label>
-          <select id="specialistType" name="specialistType" defaultValue={ticket.specialistType} style={selectStyle}>
+          <select id="specialistType" name="specialistType" defaultValue={ticket.specialistType}>
             <option value="developer">Developer</option>
             <option value="designer">Designer</option>
             <option value="seo">SEO</option>
@@ -120,7 +120,7 @@ export default async function TicketDetailPage({
           <label className="muted" htmlFor="deadline">
             Deadline
           </label>
-          <input type="date" id="deadline" name="deadline" defaultValue={ticket.deadline ?? ""} style={selectStyle} />
+          <input type="date" id="deadline" name="deadline" defaultValue={ticket.deadline ?? ""} />
         </div>
         <button className="button" type="submit" style={{ gridColumn: "1 / -1", justifySelf: "start" }}>
           Save changes
@@ -165,13 +165,3 @@ export default async function TicketDetailPage({
     </>
   );
 }
-
-const selectStyle = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid var(--line)",
-  font: "inherit",
-  background: "var(--panel)",
-  color: "var(--text)"
-} as const;

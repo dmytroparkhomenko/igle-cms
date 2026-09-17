@@ -326,6 +326,11 @@ async function listFiles(root: string, relative = ""): Promise<string[]> {
 
 export function routeForFile(filePath: string, urlStyle: "html-ext" | "clean" | "clean-slash"): string {
   if (filePath === "index.html" || filePath === "index.htm") return "/";
+  // A static file server resolves "folder/" to "folder/index.html" regardless of urlStyle — so
+  // any "index.html" nested in a folder always gets a trailing-slash directory route, the same
+  // way the top-level one does above. Only non-index files vary by urlStyle.
+  const indexMatch = /^(.*)\/index\.html?$/i.exec(filePath);
+  if (indexMatch) return `/${indexMatch[1]}/`;
   const withoutExt = filePath.replace(/\.(html|htm)$/i, "");
   if (urlStyle === "html-ext") return `/${filePath}`;
   if (urlStyle === "clean-slash") return `/${withoutExt}/`;

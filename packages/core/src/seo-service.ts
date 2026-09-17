@@ -2,9 +2,19 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  absolutizeRelativeReferences,
   applyPageSEO,
   applyStructuralPatches,
+  extractFirstElementByTag,
+  extractPageBodyMiddle,
+  findRelativeReferences,
+  getNodeAttribute,
+  getNodeTagName,
   parsePageSEO,
+  replaceElementByTag,
+  replaceImageSrcEverywhere,
+  replacePageBodyMiddle,
+  resolveRelativeReference,
   stableHash,
   type ParsedField,
   type SeoPatchInput,
@@ -146,11 +156,202 @@ export class SEOService {
     return { revisionNumber: revision.revisionNumber, updatedPageIds, skipped };
   }
 
+  /** Current header/footer markup, read from whichever page has one first — used to seed the navigation editor with real content. */
+  async getSharedElement(site: SiteRecord, tagName: "header" | "footer", actor: Actor): Promise<string | undefined> {
+    assertCan(actor, "sites.read", site.id);
+    const pages = (await this.stateStore.read()).pages
+      .filter((item) => item.siteId === site.id && !item.deletedAt)
+      .sort((a, b) => a.route.localeCompare(b.route));
+    for (const page of pages) {
+      const html = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8").catch(() => undefined);
+      if (!html) continue;
+      const extracted = extractFirstElementByTag(html, tagName);
+      if (extracted) return extracted;
+    }
+    return undefined;
+  }
+
   /**
-   * Applies visual-editor patches (VIS-04/VIS-06) located by node id, as one revision. Also
-   * detects when a patch happened to touch a field the CMS separately tracks (e.g. the H1 or
-   * title element) and flips it to Manual Source, the same way a raw source save does — a
-   * visual edit bypasses the structured field path just as much as hand-editing the file would.
+   * The visual-editor path into the same "apply everywhere" mechanism as the code-based
+   * navigation editor: takes whatever the site's <header>/<footer> currently looks like on ONE
+   * page (typically wherever the user just edited it visually and saved) and propagates that
+   * exact markup to every other page — so navigation can be edited either visually (on a page,
+   * then synced) or as raw code (on the dedicated Navigation screen).
+   */
+  async syncSharedElementFromPage(
+    site: SiteRecord,
+    pageId: string,
+    tagName: "header" | "footer",
+    actor: Actor
+  ): Promise<BulkSeoResult> {
+    assertCan(actor, "sites.edit", site.id);
+    const page = await this.getPage(site.id, pageId);
+    if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
+    const html = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
+    const extracted = extractFirstElementByTag(html, tagName);
+    if (!extracted) throw new IgleError("ELEMENT_NOT_FOUND", `This page has no <${tagName}> element to sync.`, 404);
+    return this.replaceSharedElement(site, tagName, extracted, actor);
+  }
+
+  /**
+   * Replaces the site's <header> or <footer> on every page that has one, as one revision — the
+   * "edit navigation once, apply everywhere" feature. Real imported/uploaded sites duplicate this
+   * markup per page rather than sharing a template partial, so "apply everywhere" means finding
+   * and replacing the same element on every page's own file, not editing one shared source.
+   */
+  async replaceSharedElement(
+    site: SiteRecord,
+    tagName: "header" | "footer",
+    newHtml: string,
+    actor: Actor
+  ): Promise<BulkSeoResult> {
+    assertCan(actor, "sites.edit", site.id);
+    const pages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
+    const updatedPageIds: string[] = [];
+    const skipped: BulkSeoResult["skipped"] = [];
+
+    for (const page of pages) {
+      const filePath = resolveInside(site.repoPath, page.filePath);
+      try {
+        const original = await fs.readFile(filePath, "utf8");
+        const result = replaceElementByTag(original, tagName, newHtml);
+        if (!result.found) {
+          skipped.push({ pageId: page.id, reason: `No <${tagName}> element found on this page.` });
+          continue;
+        }
+        await fs.writeFile(filePath, result.html, "utf8");
+        updatedPageIds.push(page.id);
+      } catch (error) {
+        skipped.push({ pageId: page.id, reason: error instanceof Error ? error.message : "Failed to apply." });
+      }
+    }
+
+    if (updatedPageIds.length === 0) {
+      const existing = await this.revisionService.latest(site.id);
+      return { revisionNumber: existing?.revisionNumber ?? 0, updatedPageIds, skipped };
+    }
+
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "navigation",
+      title: `Updated site ${tagName}: ${updatedPageIds.length} page(s)`,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    for (const pageId of updatedPageIds) {
+      const page = await this.getPage(site.id, pageId);
+      if (page) await this.reindexPage(site, page, revision.id);
+    }
+
+    return { revisionNumber: revision.revisionNumber, updatedPageIds, skipped };
+  }
+
+  /**
+   * Rewrites every relative href/src across every page of the site to an absolute root-relative
+   * path (see absolutizeRelativeReferences) — the fix for navigation links that work from some
+   * pages but break from others depending on how deeply nested the page's own URL is. Also
+   * corrects each page's own stored route where it didn't match how the file actually gets served
+   * (a "folder/index.html" page historically got a route like "/folder/index" instead of the real
+   * "/folder/" — see routeForFile). One combined revision.
+   */
+  async fixInternalLinks(site: SiteRecord, actor: Actor): Promise<BulkSeoResult> {
+    assertCan(actor, "sites.edit", site.id);
+    const allPages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
+
+    const correctedRoutes = new Map<string, string>();
+    for (const page of allPages) {
+      correctedRoutes.set(page.id, routeForFile(page.filePath, site.metadata.urlStyle));
+    }
+
+    const updatedPageIds: string[] = [];
+    const skipped: BulkSeoResult["skipped"] = [];
+    const routeChangedIds = new Set<string>();
+
+    for (const page of allPages) {
+      const correctPath = correctedRoutes.get(page.id)!;
+      const filePath = resolveInside(site.repoPath, page.filePath);
+      try {
+        const original = await fs.readFile(filePath, "utf8");
+
+        // A relative reference's correct resolution depends on where the author assumed the
+        // linking page would live — usually the site root (many exported templates duplicate
+        // nav/asset markup across every page assuming a flat, one-level file layout), but
+        // sometimes genuinely relative to the page's own nested folder. Neither guess is safe to
+        // apply blindly, so each distinct value is resolved both ways and settled by which target
+        // actually exists on disk; only switch to the root-relative form when it does and the
+        // page-relative one doesn't. Ambiguous or unresolved cases are left exactly as authored.
+        const decisions = new Map<string, string>();
+        for (const reference of findRelativeReferences(original)) {
+          if (decisions.has(reference.value)) continue;
+          const pageCandidate = resolveRelativeReference(reference.value, correctPath);
+          const rootCandidate = resolveRelativeReference(reference.value, "/");
+          let finalValue = pageCandidate;
+          if (rootCandidate !== pageCandidate) {
+            const [pageExists, rootExists] = await Promise.all([
+              referenceTargetExists(site.repoPath, pageCandidate),
+              referenceTargetExists(site.repoPath, rootCandidate)
+            ]);
+            if (rootExists && !pageExists) finalValue = rootCandidate;
+          }
+          decisions.set(reference.value, finalValue);
+        }
+
+        const result = absolutizeRelativeReferences(original, (reference) => decisions.get(reference.value));
+        if (result.count > 0) {
+          await fs.writeFile(filePath, result.html, "utf8");
+          updatedPageIds.push(page.id);
+        }
+        if (correctPath !== page.route) routeChangedIds.add(page.id);
+      } catch (error) {
+        skipped.push({ pageId: page.id, reason: error instanceof Error ? error.message : "Failed to process." });
+      }
+    }
+
+    if (updatedPageIds.length === 0 && routeChangedIds.size === 0) {
+      const existing = await this.revisionService.latest(site.id);
+      return { revisionNumber: existing?.revisionNumber ?? 0, updatedPageIds, skipped };
+    }
+
+    if (routeChangedIds.size > 0) {
+      await this.stateStore.update((state) => {
+        for (const record of state.pages) {
+          if (routeChangedIds.has(record.id)) record.route = correctedRoutes.get(record.id)!;
+        }
+      });
+    }
+
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "site-settings",
+      title:
+        routeChangedIds.size > 0
+          ? `Fixed internal links on ${updatedPageIds.length} page(s), corrected ${routeChangedIds.size} page route(s)`
+          : `Fixed internal links on ${updatedPageIds.length} page(s)`,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    for (const pageId of updatedPageIds) {
+      const page = await this.getPage(site.id, pageId);
+      if (page) await this.reindexPage(site, page, revision.id);
+    }
+
+    return { revisionNumber: revision.revisionNumber, updatedPageIds, skipped };
+  }
+
+  /**
+   * Applies visual-editor patches (VIS-04/VIS-06) located by node id, as one revision — the single
+   * save point for the whole visual editor session (text, style, link, remove/duplicate, image
+   * replace): nothing here is written until the caller has batched up everything the user queued
+   * locally and clicked Save. Also detects when a patch happened to touch a field the CMS
+   * separately tracks (e.g. the H1 or title element) and flips it to Manual Source, the same way a
+   * raw source save does — a visual edit bypasses the structured field path just as much as
+   * hand-editing the file would.
+   *
+   * Any patch that sets an `<img>`'s `src` also propagates to every other place that same old
+   * image appears — other occurrences on this same page (e.g. a logo in both header and footer)
+   * and every other page in the site — stripping any stale `srcset` there too (a browser prefers
+   * `srcset` over `src` whenever both are present, so leaving it behind would make the swap
+   * invisible). All of it lands in the one revision this call produces.
    */
   async applyVisualEdits(
     site: SiteRecord,
@@ -158,21 +359,34 @@ export class SEOService {
     patches: StructuralPatch[],
     actor: Actor,
     source: RevisionSource = "visual-editor"
-  ): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
+  ): Promise<{ revisionNumber: number; page: PageIndexRecord; updatedPageIds: string[] }> {
     assertCan(actor, "sites.edit", site.id);
     let page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (patches.length === 0) {
       const existing = await this.revisionService.latest(site.id);
-      return { revisionNumber: existing?.revisionNumber ?? 0, page };
+      return { revisionNumber: existing?.revisionNumber ?? 0, page, updatedPageIds: [] };
     }
 
     const filePath = resolveInside(site.repoPath, page.filePath);
     const original = await fs.readFile(filePath, "utf8");
-    const result = applyStructuralPatches(original, patches);
-    await fs.writeFile(filePath, result.html, "utf8");
 
-    const parsed = parsePageSEO(result.html);
+    const imageSwaps: Array<{ oldSrc: string; newSrc: string }> = [];
+    for (const patch of patches) {
+      if (patch.op !== "setAttr" || patch.attrName !== "src") continue;
+      if (getNodeTagName(original, patch.nodeId) !== "img") continue;
+      const oldSrc = getNodeAttribute(original, patch.nodeId, "src");
+      const newSrc = patch.value ?? "";
+      if (oldSrc && oldSrc !== newSrc) imageSwaps.push({ oldSrc, newSrc });
+    }
+
+    let primaryHtml = applyStructuralPatches(original, patches).html;
+    for (const swap of imageSwaps) {
+      primaryHtml = replaceImageSrcEverywhere(primaryHtml, swap.oldSrc, swap.newSrc).html;
+    }
+    await fs.writeFile(filePath, primaryHtml, "utf8");
+
+    const parsed = parsePageSEO(primaryHtml);
     const editedPageId = page.id;
     const pagesMetadata = await readPagesMetadata(site.repoPath);
     const metaPage = pagesMetadata.pages.find((item) => item.id === editedPageId);
@@ -187,28 +401,46 @@ export class SEOService {
       await writePagesMetadata(site.repoPath, pagesMetadata);
     }
 
+    const updatedPageIds = new Set<string>();
+    if (imageSwaps.length > 0) {
+      const otherPages = (await this.stateStore.read()).pages.filter(
+        (item) => item.siteId === site.id && !item.deletedAt && item.id !== editedPageId
+      );
+      for (const otherPage of otherPages) {
+        const otherFilePath = resolveInside(site.repoPath, otherPage.filePath);
+        let otherHtml = await fs.readFile(otherFilePath, "utf8").catch(() => undefined);
+        if (otherHtml === undefined) continue;
+        let touched = false;
+        for (const swap of imageSwaps) {
+          const swept = replaceImageSrcEverywhere(otherHtml, swap.oldSrc, swap.newSrc);
+          if (swept.count === 0) continue;
+          otherHtml = swept.html;
+          touched = true;
+        }
+        if (!touched) continue;
+        await fs.writeFile(otherFilePath, otherHtml, "utf8");
+        updatedPageIds.add(otherPage.id);
+      }
+    }
+
     const revision = await this.revisionService.commitRevision({
       site,
       source,
-      title: `Visual edit on ${page.filePath}`,
+      title:
+        updatedPageIds.size > 0
+          ? `Visual edit on ${page.filePath} and ${updatedPageIds.size} other page(s)`
+          : `Visual edit on ${page.filePath}`,
       user: { id: actor.id, name: actor.email, email: actor.email }
     });
 
     page = (await this.getPage(site.id, pageId)) ?? page;
     const indexed = await this.reindexPage(site, page, revision.id);
-    return { revisionNumber: revision.revisionNumber, page: indexed };
-  }
+    for (const otherPageId of updatedPageIds) {
+      const otherPage = await this.getPage(site.id, otherPageId);
+      if (otherPage) await this.reindexPage(site, otherPage, revision.id);
+    }
 
-  async replaceImage(
-    site: SiteRecord,
-    pageId: string,
-    nodeId: number,
-    input: { src: string; alt?: string },
-    actor: Actor
-  ): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
-    const patches: StructuralPatch[] = [{ nodeId, op: "setAttr", attrName: "src", value: input.src }];
-    if (input.alt !== undefined) patches.push({ nodeId, op: "setAttr", attrName: "alt", value: input.alt });
-    return this.applyVisualEdits(site, pageId, patches, actor, "media");
+    return { revisionNumber: revision.revisionNumber, page: indexed, updatedPageIds: [...updatedPageIds] };
   }
 
   /**
@@ -331,6 +563,25 @@ export class SEOService {
     });
     const indexed = await this.reindexPage(site, page, revision.id);
     return { revisionNumber: revision.revisionNumber, page: indexed };
+  }
+
+  /** The page's own markup between `</header>` and `<footer>` — what the code editor shows, since the surrounding header/footer are edited once on the shared Header/Footer screen. */
+  async getBodyMiddle(site: SiteRecord, pageId: string, actor: Actor): Promise<string> {
+    assertCan(actor, "sites.code", site.id);
+    const page = await this.getPage(site.id, pageId);
+    if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
+    const content = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
+    return extractPageBodyMiddle(content).middle;
+  }
+
+  /** Splices edited body-middle markup back into the page's current file, leaving its header/footer bytes untouched, then saves it the same way a full source save does. */
+  async saveBodyMiddle(site: SiteRecord, pageId: string, middleContent: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
+    assertCan(actor, "sites.code", site.id);
+    const page = await this.getPage(site.id, pageId);
+    if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
+    const current = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
+    const fullContent = replacePageBodyMiddle(current, middleContent);
+    return this.saveSource(site, pageId, fullContent, actor);
   }
 
   async reindexPage(site: SiteRecord, page: PageIndexRecord, revisionId?: string): Promise<PageIndexRecord> {
@@ -461,6 +712,32 @@ function parsedField(parsed: ReturnType<typeof parsePageSEO>, key: keyof SeoPatc
       // exhaustiveness check now that SeoPatchInput includes it.
       return { value: parsed.lang, state: parsed.lang === undefined ? "absent" : "explicit", occurrences: parsed.lang === undefined ? 0 : 1 };
   }
+}
+
+/** Checks whether an absolute root-relative path (as produced by resolveRelativeReference) corresponds to a real file in the site's repo — a directory-style path is checked as its index.html/.htm, an extensionless path is also tried with .html appended and as a folder index. */
+async function referenceTargetExists(repoPath: string, absolutePath: string): Promise<boolean> {
+  const clean = absolutePath.split("?")[0]!.split("#")[0]!;
+  const withoutLeadingSlash = clean.replace(/^\/+/, "");
+  const candidates: string[] = [];
+  if (withoutLeadingSlash === "" || clean.endsWith("/")) {
+    const base = withoutLeadingSlash.replace(/\/+$/, "");
+    candidates.push(base ? `${base}/index.html` : "index.html", base ? `${base}/index.htm` : "index.htm");
+  } else {
+    candidates.push(withoutLeadingSlash);
+    if (!/\.[a-z0-9]+$/i.test(withoutLeadingSlash)) {
+      candidates.push(`${withoutLeadingSlash}.html`, `${withoutLeadingSlash}/index.html`);
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      await fs.access(resolveInside(repoPath, candidate));
+      return true;
+    } catch {
+      // try the next candidate
+    }
+  }
+  return false;
 }
 
 function fieldValue(parsed: ReturnType<typeof parsePageSEO>, key: string): string | undefined {

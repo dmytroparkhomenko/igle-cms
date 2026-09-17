@@ -153,7 +153,7 @@ const BRIDGE_SCRIPT = `(function () {
   }
 
   function rgbToHex(rgb) {
-    var match = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(rgb || "");
+    var match = /^rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/.exec(rgb || "");
     if (!match) return null;
     var toHex = function (n) {
       var h = parseInt(n, 10).toString(16);
@@ -209,8 +209,8 @@ const BRIDGE_SCRIPT = `(function () {
     }
 
     if (msg.type === "selectNode") {
-      var target = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
-      if (target) parent.postMessage({ source: "igle-preview", type: "select", element: describe(target) }, "*");
+      var targetEl = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (targetEl) parent.postMessage({ source: "igle-preview", type: "select", element: describe(targetEl) }, "*");
     }
 
     if (msg.type === "removeNode") {
@@ -229,6 +229,16 @@ const BRIDGE_SCRIPT = `(function () {
     if (msg.type === "setStyle") {
       var toStyle = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
       if (toStyle) toStyle.style.setProperty(msg.property, msg.value);
+    }
+
+    if (msg.type === "setAttr") {
+      var toSetAttr = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (toSetAttr) toSetAttr.setAttribute(msg.attrName, msg.value);
+    }
+
+    if (msg.type === "removeAttr") {
+      var toRemoveAttr = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (toRemoveAttr) toRemoveAttr.removeAttribute(msg.attrName);
     }
   });
 })();

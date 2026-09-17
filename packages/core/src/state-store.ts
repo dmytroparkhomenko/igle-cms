@@ -17,6 +17,7 @@ export class JsonStateStore {
       state.tickets ??= [];
       state.deployments ??= [];
       state.servers ??= [];
+      state.affiliateLinks ??= {};
       // Migration: canDeployRestricted didn't exist before multi-server support — default
       // existing administrators to true (preserves what they could already do) and existing
       // editors to false, rather than silently locking everyone out of a server they already use.
@@ -37,7 +38,8 @@ export class JsonStateStore {
         jobs: [],
         tickets: [],
         deployments: [],
-        servers: []
+        servers: [],
+        affiliateLinks: {}
       };
     }
   }

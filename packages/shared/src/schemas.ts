@@ -58,6 +58,8 @@ export const siteMetadataSchema = z.object({
       content: z.string().optional()
     })
     .default({ mode: "cms-generated" }),
+  /** Site-wide default for the <meta name="robots"> tag, injected at build time into any page that doesn't already set its own. */
+  metaRobots: z.enum(["index", "noindex"]).default("index"),
   createdAt: z.string(),
   updatedAt: z.string()
 });

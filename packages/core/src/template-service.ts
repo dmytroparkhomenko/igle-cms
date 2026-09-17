@@ -154,6 +154,7 @@ export class TemplateService {
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
       sitemap: { enabled: true },
       robots: { mode: "cms-generated" },
+      metaRobots: "index",
       createdAt: now,
       updatedAt: now
     };

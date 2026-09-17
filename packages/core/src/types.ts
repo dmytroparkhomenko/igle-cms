@@ -18,6 +18,7 @@ export type RevisionSource =
   | "media"
   | "ai"
   | "bulk-seo"
+  | "navigation"
   | "verification"
   | "integration"
   | "custom-script"
@@ -95,6 +96,11 @@ export interface CoreState {
   /** The one shared login password every registered team member's account is hashed against. */
   teamPasswordHash?: string | undefined;
   teamPasswordUpdatedAt?: string | undefined;
+  /**
+   * Where traffic goes, per country (2-letter ISO code, e.g. "BR", "MX") — set by an
+   * administrator. Storage only for now: nothing reads or applies these to site content yet.
+   */
+  affiliateLinks?: Record<string, string> | undefined;
 }
 
 export interface UserRecord {

@@ -6,6 +6,7 @@ import { parsePageSEO } from "@igle/html-engine";
 import { effectiveSiteLanguageTag, resolveInside } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../../../lib/session";
+import { PreviewLink } from "../../../../PreviewLink";
 
 export default async function PageEditor({
   params,
@@ -29,7 +30,6 @@ export default async function PageEditor({
   const limits = site.metadata.seoLimits;
 
   const previewOrigin = process.env.PREVIEW_ORIGIN ?? "http://localhost:3001";
-  const pageUrl = `${previewOrigin}/${site.slug}${page.route}`;
   const displayUrl = `${site.metadata.domain ?? site.slug}${page.route}`;
 
   const h1Editable = parsed.h1.state !== "ambiguous" && !parsed.h1.readOnly;
@@ -44,7 +44,7 @@ export default async function PageEditor({
         <div>
           <h1>{page.internalName}</h1>
           <p className="muted">
-            {page.route} · <a href={pageUrl} target="_blank" rel="noreferrer">Preview</a>
+            {page.route} · <PreviewLink originFallback={previewOrigin} path={`/${site.slug}${page.route}`}>Preview</PreviewLink>
           </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>

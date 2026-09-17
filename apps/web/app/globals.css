@@ -89,13 +89,43 @@ button.button {
 }
 
 input[type="text"],
-input[type="file"] {
+input[type="file"],
+input[type="date"] {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px 10px;
   font: inherit;
   color: var(--text);
   background: var(--panel);
+}
+
+select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 32px 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background-color: var(--panel);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='M3 5l4 4 4-4' stroke='%23667085' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+select:hover {
+  border-color: var(--accent);
+}
+
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .grid {
@@ -199,6 +229,29 @@ a.list-row:hover {
   font-size: 12px;
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.6;
+}
+
+.badge-production {
+  background: var(--accent);
+  color: #fff;
+}
+
+.badge-current {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 /* Radio-driven show/hide, no JS needed. :has() reaches the radio regardless of label nesting. */
 .mode-switch .mode-panel {
   display: none;
@@ -209,6 +262,22 @@ a.list-row:hover {
 }
 
 .mode-switch:has(input[name="robotsMode"][value="manual"]:checked) .mode-panel[data-panel="manual"] {
+  display: block;
+}
+
+/* Same pattern for the site settings "Deploy to" select: the server picker (and its helper
+   text) only make sense once "aaPanel VPS" is selected — shown/hidden live as the select
+   changes, in the same form, rather than needing a save-and-reload before it even appears. */
+.deploy-target-switch .field.aapanel-only-field,
+.deploy-target-switch p.aapanel-only-field {
+  display: none;
+}
+
+.deploy-target-switch:has(#deploymentTarget option[value="aapanel"]:checked) .field.aapanel-only-field {
+  display: grid;
+}
+
+.deploy-target-switch:has(#deploymentTarget option[value="aapanel"]:checked) p.aapanel-only-field {
   display: block;
 }
 
@@ -541,9 +610,10 @@ a.list-row:hover {
 }
 
 .preview-frame-body {
-  container-type: size;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -553,13 +623,12 @@ a.list-row:hover {
 }
 
 /* A real device viewport (1440x900 desktop, 390x844 mobile — see PreviewFrame.tsx) rendered at
-   its actual pixel size, then scaled to fit whatever room is available (container-query width
-   AND height both considered via min(), so a tall narrow phone in a wide short box scales by
-   height instead of overflowing) — the preview always corresponds to a real screen, at any size. */
+   its actual pixel size, then scaled to fit whatever room is available. The scale is computed in
+   JS from a ResizeObserver measurement of .preview-frame-body (not CSS container-query size
+   containment — that needs both axes definite up front and, nested in a flexing layout, could
+   settle into a relayout loop instead of a stable size) — width/height/transform below are set
+   inline per-render from that measurement, this file only supplies the static look.  */
 .preview-frame-device {
-  --preview-scale: min(calc(100cqw / var(--device-w)), calc(100cqh / var(--device-h)));
-  width: calc(var(--device-w) * 1px * var(--preview-scale));
-  height: calc(var(--device-h) * 1px * var(--preview-scale));
   overflow: hidden;
   background: #fff;
   flex-shrink: 0;
@@ -571,9 +640,6 @@ a.list-row:hover {
 }
 
 .preview-frame-device iframe {
-  width: calc(var(--device-w) * 1px);
-  height: calc(var(--device-h) * 1px);
-  transform: scale(var(--preview-scale));
   transform-origin: top left;
   border: 0;
   display: block;

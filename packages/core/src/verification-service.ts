@@ -38,7 +38,13 @@ export class VerificationService {
    */
   async add(site: SiteRecord, provider: VerificationProvider, code: string, actor: Actor): Promise<{ revisionNumber: number; verification: VerificationRecord }> {
     assertCan(actor, "integrations.configure", site.id);
-    const trimmed = code.trim();
+    // Google shows the code as part of a full filename ("google<code>.html"), and it's natural
+    // to paste that whole thing — strip a redundant "google" prefix and ".html" suffix so it
+    // doesn't get doubled into "googlegoogle<code>.html" when we build the file ourselves below.
+    let trimmed = code.trim();
+    if (provider === "google") {
+      trimmed = trimmed.replace(/\.html?$/i, "").replace(/^google/i, "");
+    }
     if (!CODE_PATTERN.test(trimmed)) {
       throw new IgleError("INVALID_VERIFICATION_CODE", "That doesn't look like a verification code (letters, numbers, - and _ only, 8-64 characters).", 400);
     }

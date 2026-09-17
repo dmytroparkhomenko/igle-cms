@@ -77,7 +77,7 @@ export default async function TicketsPage({
             <label className="muted" htmlFor="specialistType">
               Assign to
             </label>
-            <select id="specialistType" name="specialistType" required style={selectStyle}>
+            <select id="specialistType" name="specialistType" required>
               <option value="developer">Developer</option>
               <option value="designer">Designer</option>
               <option value="seo">SEO</option>
@@ -88,7 +88,7 @@ export default async function TicketsPage({
             <label className="muted" htmlFor="priority">
               Priority
             </label>
-            <select id="priority" name="priority" defaultValue="medium" style={selectStyle}>
+            <select id="priority" name="priority" defaultValue="medium">
               <option value="low">Low</option>
               <option value="medium">Medium</option>
               <option value="high">High</option>
@@ -102,7 +102,7 @@ export default async function TicketsPage({
             <label className="muted" htmlFor="siteId">
               Site (optional)
             </label>
-            <select id="siteId" name="siteId" style={selectStyle}>
+            <select id="siteId" name="siteId">
               <option value="">No specific site</option>
               {sites.map((site) => (
                 <option key={site.id} value={site.id}>
@@ -115,7 +115,7 @@ export default async function TicketsPage({
             <label className="muted" htmlFor="deadline">
               Deadline (optional)
             </label>
-            <input type="date" id="deadline" name="deadline" style={selectStyle} />
+            <input type="date" id="deadline" name="deadline" />
           </div>
         </div>
 
@@ -176,13 +176,3 @@ export default async function TicketsPage({
     </>
   );
 }
-
-const selectStyle = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 6,
-  border: "1px solid var(--line)",
-  font: "inherit",
-  background: "var(--panel)",
-  color: "var(--text)"
-} as const;

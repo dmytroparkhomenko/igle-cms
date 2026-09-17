@@ -14,7 +14,7 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
 
     const form = await request.formData();
     const content = String(form.get("content") ?? "");
-    const result = await runtime.seoService.saveSource(site, pageId, content, (await requireActor()));
+    const result = await runtime.seoService.saveBodyMiddle(site, pageId, content, (await requireActor()));
 
     if (wantsRedirect) {
       return NextResponse.redirect(
