@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{page.seoTitle}}</title>
+  <meta name="description" content="{{page.metaDescription}}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="/divulgacion-afiliados">
+  <!-- Favicon Package -->
+  <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/img/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/img/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/img/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="./assets/img/favicon.svg">
+
+  <link rel="alternate" hreflang="es-MX" href="/divulgacion-afiliados" />
+  <link rel="alternate" hreflang="x-default" href="/divulgacion-afiliados" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css">
+  <script src="./assets/js/main.js" defer></script>
+  <!-- Identity Schema (Organization & WebSite) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "/#organization",
+        "name": "{{fields.brandName}} Guía México",
+        "url": "/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "/assets/img/favicon-32x32.png"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "/#website",
+        "url": "/",
+        "name": "{{fields.brandName}} Guía México",
+        "publisher": {
+          "@id": "/#organization"
+        },
+        "inLanguage": "es-MX"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="site-logo" aria-label="{{fields.brandName}} México Inicio">
+        <img src="./assets/img/logo.svg" alt="{{fields.brandName}} México Logo" width="140" height="40">
+      </a>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a href="/" class="nav-link">Inicio</a>
+        <a href="/casino" class="nav-link">Casino</a>
+        <a href="/bono" class="nav-link">Bono</a>
+        <a href="/app" class="nav-link">App</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary">VISITAR {{fields.brandName | upper}}</a>
+        <button class="mobile-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded="false">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="breadcrumbs">
+    <div class="container">
+      <ul class="breadcrumb-list">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active">Divulgación de afiliados</li>
+      </ul>
+    </div>
+  </div>
+
+  <main id="main-content" class="section">
+    <div class="container" style="max-width: 900px;">
+      <h1>Divulgación de Afiliados</h1>
+      <p class="hero-intro">En cumplimiento con los estándares internacionales de transparencia publicitaria, informamos de manera clara cómo financia sus operaciones nuestro portal {{site.name}}.</p>
+
+      <h2>Relación Comercial de Afiliados</h2>
+      <p>{{site.name}} opera bajo un modelo de marketing de afiliados. Esto significa que varios de los enlaces incluidos en nuestro sitio web (tales como botones de llamada a la acción 'JUGAR AHORA', banners promocionales e imágenes interactivas) son enlaces patrocinados que redirigen al sitio web oficial del operador comerciado ({{fields.brandName}} México).</p>
+
+      <p>Si un usuario hace clic en uno de estos enlaces y posteriormente decide registrarse o depositar en la plataforma de destino, {{site.name}} puede recibir una comisión económica por referencia sin que esto represente ningún costo adicional para el usuario.</p>
+
+      <h2>Independencia Editorial</h2>
+      <p>Nuestras opiniones, análisis y guías informativas se elaboran de manera independiente. La comisión recibida nos permite mantener la infraestructura técnica del sitio y la actualización constante de contenidos sin comprometer la objetividad de las evaluaciones ni inventar términos promocionales no verificados.</p>
+
+      <h2>Atributos de Enlaces Patrocinados</h2>
+      <p>Todos los enlaces salientes comerciales incluidos en este sitio incorporan de forma visible en el código HTML los atributos exigidos por los motores de búsqueda: <code>rel="sponsored nofollow noopener noreferrer"</code>.</p>
+    </div>
+  
+<div class="editorial-notice-box" >
+  <h2>Compromiso Editorial e Información Adicional</h2>
+  <p>En <strong>{{site.name}}</strong> mantenemos altos estándares de transparencia y objetividad. Toda la información presentada sobre {{fields.brandName}} México es revisada periódicamente para garantizar su exactitud técnica y legal conforme a las normativas vigentes en México.</p>
+  <p>Te invitamos a consultar nuestras secciones principales para obtener más detalles sobre el funcionamiento de la plataforma:</p>
+  <ul class="editorial-notice-list">
+    <li><a href="/casino">Reseña de {{fields.brandName}} Casino</a>: Juegos, tragamonedas y casino en vivo.</li>
+    <li><a href="/bono">Guía de Bonos y Códigos</a>: Requisitos de apuesta y ofertas activas.</li>
+    <li><a href="/app">Aplicación Móvil {{fields.brandName}}</a>: Instalación en dispositivos iOS y Android.</li>
+    <li><a href="/contacto">Canales de Contacto</a>: Envío de consultas y avisos al equipo editorial.</li>
+  </ul>
+</div>
+
+</main>
+
+  <footer class="site-footer">
+    <div class="container text-center">
+      <p>© 2026 {{site.name}} — Declaración de divulgación comercial y afiliados. +18.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

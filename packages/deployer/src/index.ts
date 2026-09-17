@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
+export * from "./aapanel-provider.js";
+
 export interface DeploymentProvider {
   deploy(input: { buildPath: string; remoteDirectory: string; revisionId: string }): Promise<{ releasePath: string }>;
   rollback(input: { releasePath: string }): Promise<void>;

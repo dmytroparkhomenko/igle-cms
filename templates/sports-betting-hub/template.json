@@ -1,0 +1,23 @@
+{
+  "key": "sports-betting-hub",
+  "version": "0.1.0",
+  "name": "Sports Betting Hub",
+  "description": "Real, production design lifted from an existing Mexican Liga MX odds/betting content site — full CSS, article layout, FAQ, author box and disclaimers included. Content is in Spanish (es-MX).",
+  "pageTypes": [
+    {
+      "key": "home",
+      "name": "Home",
+      "file": "pages/home.html",
+      "route": "/",
+      "seoTitle": "Tabla de Posiciones Liga MX 2026, Momios y Casino",
+      "metaDescription": "Consulta la tabla de posiciones Liga MX 2026 y aprende a comparar momios, bonos, casino online, pagos, retiros y verificación para adultos en México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": ".site-logo__text", "label": "Brand name", "default": "TablaLigaMX" },
+        { "key": "ctaLabel", "type": "text", "selector": ".header-cta", "label": "Header CTA label", "default": "Reclamar bono" },
+        { "key": "ctaUrl", "type": "link", "selector": ".header-cta", "label": "Header CTA link (affiliate URL)", "default": "#" },
+        { "key": "heroTitle", "type": "text", "selector": ".page-hero h1", "label": "Hero title", "default": "TablaLigaMX Casino y Tabla de Posiciones México" },
+        { "key": "heroSubtitle", "type": "text", "selector": ".page-hero p", "label": "Hero subtitle", "default": "Información independiente para adultos en México sobre la tabla de posiciones Liga MX 2026, lectura de momios, bonos, casino online, pagos, retiros, verificación y juego responsable antes de registrarte o apostar." }
+      ]
+    }
+  ]
+}

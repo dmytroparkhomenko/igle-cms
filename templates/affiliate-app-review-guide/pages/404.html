@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta name="description" content="{{page.metaDescription}}">
+
+  <!-- Favicon Package -->
+  <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/img/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/img/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/img/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="./assets/img/favicon.svg">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{page.seoTitle}}</title>
+  <meta name="robots" content="noindex, follow">
+
+  <link rel="alternate" hreflang="es-MX" href="/" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css">
+  <script src="./assets/js/main.js" defer></script>
+  <!-- Identity Schema (Organization & WebSite) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "/#organization",
+        "name": "{{fields.brandName}} Guía México",
+        "url": "/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "/assets/img/favicon-32x32.png"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "/#website",
+        "url": "/",
+        "name": "{{fields.brandName}} Guía México",
+        "publisher": {
+          "@id": "/#organization"
+        },
+        "inLanguage": "es-MX"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="site-logo" aria-label="{{fields.brandName}} México Inicio">
+        <img src="./assets/img/logo.svg" alt="{{fields.brandName}} México Logo" width="140" height="40">
+      </a>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a href="/" class="nav-link">Inicio</a>
+        <a href="/casino" class="nav-link">Casino</a>
+        <a href="/bono" class="nav-link">Bono</a>
+        <a href="/app" class="nav-link">App</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary">VISITAR {{fields.brandName | upper}}</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="section text-center" style="padding-top: 5rem; padding-bottom: 5rem;">
+    <div class="container" style="max-width: 700px;">
+      <h1 class="text-gold" style="font-size: 5rem; margin-bottom: 0;">404</h1>
+      <h2>Página no encontrada</h2>
+      <p class="hero-intro mb-4">Lo sentimos, la página que buscas no existe o ha sido movida a una nueva ubicación.</p>
+      
+      <div class="grid-2 mb-4">
+        <a href="/" class="btn btn-primary btn-block">REGRESAR AL INICIO</a>
+        <a href="/casino" class="btn btn-outline btn-block">GUÍA DE CASINO</a>
+      </div>
+
+      <div class="grid-2">
+        <a href="/bono" class="btn btn-outline btn-block">GUÍA DE BONOS</a>
+        <a href="/app" class="btn btn-outline btn-block">GUÍA DE APP MÓVIL</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container text-center">
+      <p>© 2026 {{site.name}} — Guía de {{fields.brandName}} México. +18.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

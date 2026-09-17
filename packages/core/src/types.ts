@@ -11,6 +11,10 @@ export type RevisionSource =
   | "visual-editor"
   | "code-editor"
   | "file-manager"
+  | "page-duplicate"
+  | "page-delete"
+  | "page-restore"
+  | "page-purge"
   | "media"
   | "ai"
   | "bulk-seo"
@@ -71,6 +75,9 @@ export interface PageIndexRecord {
   fileHash: string;
   auditIssues: Array<{ code: string; severity: "error" | "warning"; message: string }>;
   lastRevisionId?: string | undefined;
+  deletedAt?: string | undefined;
+  trashPath?: string | undefined;
+  previousInSitemap?: boolean | undefined;
 }
 
 export interface CoreState {
@@ -82,6 +89,12 @@ export interface CoreState {
   sessions: SessionRecord[];
   drafts: DraftRecord[];
   jobs: JobRecord[];
+  tickets: TicketRecord[];
+  deployments: DeploymentRecord[];
+  servers: ServerRecord[];
+  /** The one shared login password every registered team member's account is hashed against. */
+  teamPasswordHash?: string | undefined;
+  teamPasswordUpdatedAt?: string | undefined;
 }
 
 export interface UserRecord {
@@ -90,12 +103,24 @@ export interface UserRecord {
   name: string;
   role: "administrator" | "editor";
   passwordHash: string;
+  /** Deploying/moving a site onto a server flagged `restricted` requires this — off by default for everyone but the bootstrap admin. */
+  canDeployRestricted: boolean;
   twoFactorSecret?: string | undefined;
   twoFactorEnabled: boolean;
   requireTwoFactor: boolean;
   lockedUntil?: string | undefined;
   failedLoginWindowStartedAt?: string | undefined;
   failedLoginCount: number;
+  createdAt: string;
+}
+
+/** A registered VPS (aaPanel) a site can deploy to. `restricted` servers require canDeployRestricted on the actor. */
+export interface ServerRecord {
+  id: string;
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  restricted: boolean;
   createdAt: string;
 }
 
@@ -134,4 +159,48 @@ export interface JobRecord {
   logs: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type TicketSpecialistType = "developer" | "designer" | "seo" | "copywriter";
+export type TicketPriority = "low" | "medium" | "high" | "urgent";
+export type TicketStatus = "open" | "in-progress" | "done" | "cancelled";
+
+export interface TicketComment {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface TicketRecord {
+  id: string;
+  siteId?: string | undefined;
+  title: string;
+  description: string;
+  specialistType: TicketSpecialistType;
+  priority: TicketPriority;
+  status: TicketStatus;
+  deadline?: string | undefined;
+  comments: TicketComment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DeploymentStatus = "success" | "failed" | "rolled-back";
+export type DeploymentKind = "deploy" | "rollback";
+
+export interface DeploymentRecord {
+  id: string;
+  siteId: string;
+  revisionId: string;
+  revisionNumber: number;
+  kind: DeploymentKind;
+  status: DeploymentStatus;
+  target: "local" | "aapanel";
+  releasePath?: string | undefined;
+  buildIssues: Array<{ class: "error" | "warning"; code: string; message: string }>;
+  error?: string | undefined;
+  sslError?: string | undefined;
+  createdByUserId?: string | undefined;
+  createdAt: string;
 }

@@ -13,7 +13,17 @@ export class JsonStateStore {
   async read(): Promise<CoreState> {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
-      return JSON.parse(raw) as CoreState;
+      const state = JSON.parse(raw) as CoreState;
+      state.tickets ??= [];
+      state.deployments ??= [];
+      state.servers ??= [];
+      // Migration: canDeployRestricted didn't exist before multi-server support — default
+      // existing administrators to true (preserves what they could already do) and existing
+      // editors to false, rather than silently locking everyone out of a server they already use.
+      for (const user of state.users) {
+        user.canDeployRestricted ??= user.role === "administrator";
+      }
+      return state;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       return {
@@ -24,7 +34,10 @@ export class JsonStateStore {
         invites: [],
         sessions: [],
         drafts: [],
-        jobs: []
+        jobs: [],
+        tickets: [],
+        deployments: [],
+        servers: []
       };
     }
   }

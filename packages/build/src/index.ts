@@ -58,9 +58,12 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   const scripts = scriptsMetadataSchema.parse(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/scripts.json"));
 
   await injectScripts(buildPath, scripts.scripts.filter((script) => script.enabled && ["production", "both"].includes(script.environment)));
-  await writeSitemap(buildPath, site, pages.pages, input.productionBaseUrl);
+  if (site.sitemap.enabled) {
+    await writeSitemap(buildPath, site, pages.pages, input.productionBaseUrl, input.repoPath, input.commitSha);
+  }
   if (site.robots.mode === "cms-generated") {
-    await fs.writeFile(path.join(buildPath, "robots.txt"), `User-agent: *\nAllow: /\nSitemap: ${canonicalBase(site, input.productionBaseUrl)}/sitemap.xml\n`, "utf8");
+    const sitemapLine = site.sitemap.enabled ? `Sitemap: ${canonicalBase(site, input.productionBaseUrl)}/sitemap.xml\n` : "";
+    await fs.writeFile(path.join(buildPath, "robots.txt"), `User-agent: *\nAllow: /\n${sitemapLine}`, "utf8");
   }
 
   const issues = await validateBuild(buildPath);
@@ -158,19 +161,40 @@ function injectScript(html: string, placement: "head-start" | "head-end" | "body
 
 async function writeSitemap(
   buildPath: string,
-  site: { domain?: string; https: boolean; urlStyle: "html-ext" | "clean" | "clean-slash" },
+  site: { domain?: string | undefined; https: boolean; urlStyle: "html-ext" | "clean" | "clean-slash" },
   pages: Array<{ filePath: string; route: string; inSitemap: boolean }>,
-  productionBaseUrl?: string
+  productionBaseUrl: string | undefined,
+  repoPath: string,
+  commitSha: string
 ): Promise<void> {
   const base = canonicalBase(site, productionBaseUrl);
-  const urls = pages
-    .filter((page) => page.inSitemap)
-    .map((page) => `  <url><loc>${xmlEscape(`${base}${page.route}`)}</loc></url>`)
-    .join("\n");
+  const included = pages.filter((page) => page.inSitemap);
+  const urls = (
+    await Promise.all(
+      included.map(async (page) => {
+        const lastmod = await lastModifiedAt(repoPath, commitSha, page.filePath);
+        return `  <url><loc>${xmlEscape(`${base}${page.route}`)}</loc><lastmod>${lastmod}</lastmod></url>`;
+      })
+    )
+  ).join("\n");
   await fs.writeFile(buildPath + "/sitemap.xml", `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`, "utf8");
 }
 
-function canonicalBase(site: { domain?: string; https: boolean }, productionBaseUrl?: string): string {
+async function lastModifiedAt(repoPath: string, commitSha: string, filePath: string): Promise<string> {
+  try {
+    const { stdout } = await execFile(
+      "git",
+      ["log", "-1", "--format=%aI", commitSha, "--", filePath],
+      { cwd: repoPath, encoding: "utf8" }
+    );
+    const date = stdout.trim();
+    return date === "" ? new Date().toISOString().slice(0, 10) : date.slice(0, 10);
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
+function canonicalBase(site: { domain?: string | undefined; https: boolean }, productionBaseUrl?: string): string {
   if (productionBaseUrl) return productionBaseUrl.replace(/\/$/, "");
   const protocol = site.https ? "https" : "http";
   return `${protocol}://${site.domain ?? "example.invalid"}`;

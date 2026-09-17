@@ -1,0 +1,23 @@
+{
+  "key": "casino-bonus-guide",
+  "version": "0.1.0",
+  "name": "Casino Bonus Guide",
+  "description": "Real, production design lifted from an existing Brazilian casino-bonus affiliate site — full theme CSS, hero, offer cards, FAQ and disclaimers included. Content is in Portuguese (pt-BR).",
+  "pageTypes": [
+    {
+      "key": "home",
+      "name": "Home",
+      "file": "pages/home.html",
+      "route": "/",
+      "seoTitle": "Bônus de 20 Reais 2026 | Plataformas que Dão 20 Reais Grátis",
+      "metaDescription": "Bônus de 20 reais: conheça as melhores plataformas com bônus no cadastro, com ou sem depósito, além de guias, passo a passo e dicas.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": ".logo", "label": "Brand name", "default": "Bônus 20 Reais" },
+        { "key": "heroTitleHtml", "type": "rich-text", "selector": ".hero h1", "label": "Hero title (HTML)", "default": "<span class=\"hl\">Bônus de 20 Reais</span>: as melhores plataformas que dão 20 reais grátis" },
+        { "key": "heroLeadHtml", "type": "rich-text", "selector": ".hero .lead", "label": "Hero lead paragraph (HTML)", "default": "Bem-vindo ao <strong>Bônus 20 Reais</strong>, o guia que reúne as plataformas que dão 20 reais de bônus no cadastro, com e sem depósito. Compare, entenda as regras e comece a jogar com segurança." },
+        { "key": "ctaLabel", "type": "text", "selector": ".hero-cta .btn-gold", "label": "Primary CTA label", "default": "Ver plataformas" },
+        { "key": "ctaUrl", "type": "link", "selector": ".hero-cta .btn-gold", "label": "Primary CTA link (affiliate URL)", "default": "#" }
+      ]
+    }
+  ]
+}

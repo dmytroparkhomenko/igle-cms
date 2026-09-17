@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{page.seoTitle}}</title>
+  <meta name="description" content="{{page.metaDescription}}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="/sobre-nosotros">
+  <!-- Favicon Package -->
+  <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/img/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/img/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/img/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="./assets/img/favicon.svg">
+
+  <link rel="alternate" hreflang="es-MX" href="/sobre-nosotros" />
+  <link rel="alternate" hreflang="x-default" href="/sobre-nosotros" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css">
+  <script src="./assets/js/main.js" defer></script>
+  <!-- Identity Schema (Organization & WebSite) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "/#organization",
+        "name": "{{fields.brandName}} Guía México",
+        "url": "/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "/assets/img/favicon-32x32.png"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "/#website",
+        "url": "/",
+        "name": "{{fields.brandName}} Guía México",
+        "publisher": {
+          "@id": "/#organization"
+        },
+        "inLanguage": "es-MX"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="site-logo" aria-label="{{fields.brandName}} México Inicio">
+        <img src="./assets/img/logo.svg" alt="{{fields.brandName}} México Logo" width="140" height="40">
+      </a>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a href="/" class="nav-link">Inicio</a>
+        <a href="/casino" class="nav-link">Casino</a>
+        <a href="/bono" class="nav-link">Bono</a>
+        <a href="/app" class="nav-link">App</a>
+      </nav>
+      <div class="header-actions">
+        <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary">VISITAR {{fields.brandName | upper}}</a>
+        <button class="mobile-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded="false">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="breadcrumbs">
+    <div class="container">
+      <ul class="breadcrumb-list">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active">Sobre nosotros</li>
+      </ul>
+    </div>
+  </div>
+
+  <main id="main-content" class="section">
+    <div class="container" style="max-width: 900px;">
+      <h1>Sobre nosotros</h1>
+      <p class="hero-intro">Bienvenido a {{site.name}}, un recurso de consulta independiente creado para guiar a los usuarios en México sobre las opciones de apuestas deportivas y casino en línea en la plataforma de {{fields.brandName}}.</p>
+      
+      <h2>Nuestra Misión Editorial</h2>
+      <p>Nuestra meta es ofrecer análisis neutros, objetivos y verificables sobre cómo acceder y utilizar el servicio de {{fields.brandName}} en México. Creemos firmemente que los usuarios merecen información clara sin promesas engañosas ni exageraciones sobre ganancias o bonificaciones.</p>
+      
+      <h2>Principios de Contenido</h2>
+      <ul>
+        <li><strong>Transparencia:</strong> Explicamos claramente que somos una guía independiente y que recibimos comisión por enlaces comerciales de afiliados.</li>
+        <li><strong>Precisión Verificada:</strong> Nos basamos únicamente en datos oficiales de la marca como la licencia SEGOB DGJS/DCRCA/P-01/2021 y canales de pago verificados (SPEI/OXXO).</li>
+        <li><strong>Enfoque en Juego Responsable:</strong> Promovemos activamente prácticas de juego seguro y el estricto cumplimiento del límite de edad legal (+18).</li>
+      </ul>
+
+      <h2>Propiedad y Contacto</h2>
+      <p>Si deseas realizar alguna sugerencia o consulta sobre el contenido publicado en nuestro sitio, puedes ponerte en contacto a través de nuestra página de <a href="/contacto">Contacto</a>.</p>
+    </div>
+  
+<div class="editorial-notice-box" >
+  <h2>Compromiso Editorial e Información Adicional</h2>
+  <p>En <strong>{{site.name}}</strong> mantenemos altos estándares de transparencia y objetividad. Toda la información presentada sobre {{fields.brandName}} México es revisada periódicamente para garantizar su exactitud técnica y legal conforme a las normativas vigentes en México.</p>
+  <p>Te invitamos a consultar nuestras secciones principales para obtener más detalles sobre el funcionamiento de la plataforma:</p>
+  <ul class="editorial-notice-list">
+    <li><a href="/casino">Reseña de {{fields.brandName}} Casino</a>: Juegos, tragamonedas y casino en vivo.</li>
+    <li><a href="/bono">Guía de Bonos y Códigos</a>: Requisitos de apuesta y ofertas activas.</li>
+    <li><a href="/app">Aplicación Móvil {{fields.brandName}}</a>: Instalación en dispositivos iOS y Android.</li>
+    <li><a href="/contacto">Canales de Contacto</a>: Envío de consultas y avisos al equipo editorial.</li>
+  </ul>
+</div>
+
+
+<p>Nuestro equipo realiza revisiones continuas para actualizar las condiciones de los bonos, la disponibilidad de los juegos de casino y las versiones de la aplicación móvil {{fields.brandName}}. Si tienes alguna observación o sugerencia sobre nuestro contenido, te invitamos a enviarnos un mensaje a través de nuestra página de contacto.</p>
+
+</main>
+
+  <footer class="site-footer">
+    <div class="container text-center">
+      <p>© 2026 {{site.name}} — Guía informativa independiente sobre {{fields.brandName}} México. +18.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

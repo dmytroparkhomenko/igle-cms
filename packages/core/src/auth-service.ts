@@ -1,11 +1,137 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { IgleError } from "@igle/shared";
+import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { JsonStateStore, id } from "./state-store.js";
 import type { UserRecord } from "./types.js";
 
+export interface TeamMemberSummary {
+  id: string;
+  email: string;
+  name: string;
+  role: "administrator" | "editor";
+  canDeployRestricted: boolean;
+  createdAt: string;
+  lockedUntil?: string | undefined;
+}
+
 export class AuthService {
   constructor(private readonly stateStore: JsonStateStore) {}
+
+  /**
+   * One shared password gates every registered account (SOT: "one password for everyone" — the
+   * team is small and trusted; per-user passwords/invite links were judged unnecessary overhead).
+   * Bootstraps the very first administrator when no users exist yet — called at server startup
+   * from ADMIN_EMAIL/ADMIN_PASSWORD env vars, never from a request (no actor exists yet to check).
+   */
+  async bootstrapFirstAdminIfNeeded(email: string, password: string): Promise<UserRecord | undefined> {
+    const state = await this.stateStore.read();
+    if (state.users.length > 0) return undefined;
+    const passwordHash = await bcrypt.hash(password, 12);
+    const user = this.createUserRecordWithHash(email, passwordHash, email, "administrator");
+    user.canDeployRestricted = true;
+    state.users.push(user);
+    state.teamPasswordHash = passwordHash;
+    state.teamPasswordUpdatedAt = new Date().toISOString();
+    await this.stateStore.write(state);
+    return user;
+  }
+
+  async hasTeamPassword(): Promise<boolean> {
+    const state = await this.stateStore.read();
+    return Boolean(state.teamPasswordHash);
+  }
+
+  /** Admin-only. Re-hashes and applies the new shared password to every existing account too, so it stays one password for everyone going forward. */
+  async setTeamPassword(newPassword: string, actor: Actor): Promise<void> {
+    assertCan(actor, "users.manage");
+    if (newPassword.length < 8) throw new IgleError("VALIDATION_ERROR", "Password must be at least 8 characters.", 400);
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.stateStore.update((state) => {
+      state.teamPasswordHash = passwordHash;
+      state.teamPasswordUpdatedAt = new Date().toISOString();
+      for (const user of state.users) user.passwordHash = passwordHash;
+    });
+  }
+
+  async listTeamMembers(actor: Actor): Promise<TeamMemberSummary[]> {
+    assertCan(actor, "users.manage");
+    const state = await this.stateStore.read();
+    return state.users
+      .map((user) => ({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        canDeployRestricted: user.canDeployRestricted,
+        createdAt: user.createdAt,
+        lockedUntil: user.lockedUntil
+      }))
+      .sort((a, b) => a.email.localeCompare(b.email));
+  }
+
+  async addTeamMember(input: { email: string; name?: string; role: "administrator" | "editor" }, actor: Actor): Promise<UserRecord> {
+    assertCan(actor, "users.manage");
+    const state = await this.stateStore.read();
+    if (!state.teamPasswordHash) {
+      throw new IgleError("TEAM_PASSWORD_NOT_SET", "Set a team password before registering members.", 400);
+    }
+    const email = input.email.trim().toLowerCase();
+    if (!email || !email.includes("@")) throw new IgleError("VALIDATION_ERROR", "Enter a valid email address.", 400);
+    if (state.users.some((user) => user.email.toLowerCase() === email)) {
+      throw new IgleError("USER_EXISTS", "A member with this email is already registered.", 409);
+    }
+    const user = this.createUserRecordWithHash(email, state.teamPasswordHash, input.name?.trim() || email, input.role);
+    state.users.push(user);
+    await this.stateStore.write(state);
+    return user;
+  }
+
+  async updateTeamMemberRole(userId: string, role: "administrator" | "editor", actor: Actor): Promise<void> {
+    assertCan(actor, "users.manage");
+    await this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === userId);
+      if (!user) throw new IgleError("USER_NOT_FOUND", "Member was not found.", 404);
+      user.role = role;
+    });
+  }
+
+  /** Admin-only. Grants/revokes the specific "can deploy to restricted servers" flag — independent of role. */
+  async setCanDeployRestricted(userId: string, value: boolean, actor: Actor): Promise<void> {
+    assertCan(actor, "users.manage");
+    await this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === userId);
+      if (!user) throw new IgleError("USER_NOT_FOUND", "Member was not found.", 404);
+      user.canDeployRestricted = value;
+    });
+  }
+
+  async removeTeamMember(userId: string, actor: Actor): Promise<void> {
+    assertCan(actor, "users.manage");
+    if (userId === actor.id) throw new IgleError("CANNOT_REMOVE_SELF", "You can't remove your own account.", 400);
+    await this.stateStore.update((state) => {
+      state.users = state.users.filter((user) => user.id !== userId);
+      state.sessions = state.sessions.filter((session) => session.userId !== userId);
+    });
+  }
+
+  /** Looks up the actor for a session cookie value. Returns undefined for missing/expired/revoked sessions — never throws, so callers can treat it as "not logged in." */
+  async getActorForSession(sessionId: string | undefined): Promise<Actor | undefined> {
+    if (!sessionId) return undefined;
+    const state = await this.stateStore.read();
+    const session = state.sessions.find((item) => item.id === sessionId);
+    if (!session || session.revokedAt) return undefined;
+    if (new Date(session.expiresAt).getTime() < Date.now()) return undefined;
+    const user = state.users.find((item) => item.id === session.userId);
+    if (!user) return undefined;
+    return { id: user.id, email: user.email, role: user.role, canDeployRestricted: user.canDeployRestricted };
+  }
+
+  async logout(sessionId: string): Promise<void> {
+    await this.stateStore.update((state) => {
+      const session = state.sessions.find((item) => item.id === sessionId);
+      if (session) session.revokedAt = new Date().toISOString();
+    });
+  }
 
   async createFirstAdministrator(input: { email: string; password: string; name?: string }): Promise<UserRecord> {
     const state = await this.stateStore.read();
@@ -83,12 +209,17 @@ export class AuthService {
   }
 
   private async createUserRecord(email: string, password: string, name: string, role: "administrator" | "editor"): Promise<UserRecord> {
+    return this.createUserRecordWithHash(email, await bcrypt.hash(password, 12), name, role);
+  }
+
+  private createUserRecordWithHash(email: string, passwordHash: string, name: string, role: "administrator" | "editor"): UserRecord {
     return {
       id: id("user"),
       email,
       name,
       role,
-      passwordHash: await bcrypt.hash(password, 12),
+      passwordHash,
+      canDeployRestricted: false,
       twoFactorEnabled: false,
       requireTwoFactor: false,
       failedLoginCount: 0,

@@ -10,8 +10,11 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@igle/build": "workspace:*",
+    "@igle/deployer": "workspace:*",
     "@igle/html-engine": "workspace:*",
     "@igle/shared": "workspace:*",
+    "@igle/templates": "workspace:*",
     "bcryptjs": "^2.4.3",
     "zod": "^3.25.76"
   }

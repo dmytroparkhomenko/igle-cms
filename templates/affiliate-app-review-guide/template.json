@@ -1,0 +1,129 @@
+{
+  "key": "affiliate-app-review-guide",
+  "version": "0.1.0",
+  "name": "Affiliate App Review Guide",
+  "description": "Real, production 10-page affiliate review site (Spanish, es-MX) for a mobile casino/betting app — home, app guide, bonus guide, casino guide, contact, about, responsible-gaming, affiliate disclosure, privacy policy and terms, plus a 404 page. Full theme CSS/JS and image set included.",
+  "pageTypes": [
+    {
+      "key": "home",
+      "name": "Home",
+      "file": "pages/home.html",
+      "route": "/",
+      "seoTitle": "Playdoit México: Acceso, Casino, Bonos y Aplicación",
+      "metaDescription": "Guía informativa de Playdoit en México: acceso, casino, bonos, uso móvil, seguridad básica y puntos que conviene revisar antes de continuar.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "app",
+      "name": "App",
+      "file": "pages/app.html",
+      "route": "/app",
+      "seoTitle": "Playdoit App México: Acceso Móvil y Guía de Uso",
+      "metaDescription": "Guía de Playdoit App para México: acceso móvil, compatibilidad, instalación segura, permisos y puntos que conviene verificar antes de usarla.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "bono",
+      "name": "Bono",
+      "file": "pages/bono.html",
+      "route": "/bono",
+      "seoTitle": "Playdoit Bono México: Promociones, Códigos y Reglas",
+      "metaDescription": "Consulta una guía sobre Playdoit Bono: cómo revisar promociones, códigos, requisitos, vigencia y condiciones antes de aceptar cualquier oferta.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "casino",
+      "name": "Casino",
+      "file": "pages/casino.html",
+      "route": "/casino",
+      "seoTitle": "Playdoit Casino México: Acceso, Juegos y Seguridad",
+      "metaDescription": "Conoce cómo acceder a Playdoit Casino, qué revisar en la plataforma, cómo usarla desde el celular y qué medidas considerar antes de jugar.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "contacto",
+      "name": "Contacto",
+      "file": "pages/contacto.html",
+      "route": "/contacto",
+      "seoTitle": "Contacto - Guía Informativa Playdoit México",
+      "metaDescription": "Ponte en contacto con los administradores de esta guía para consultas editoriales sobre nuestra guía de Playdoit en México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "divulgacion-afiliados",
+      "name": "Divulgación de Afiliados",
+      "file": "pages/divulgacion-afiliados.html",
+      "route": "/divulgacion-afiliados",
+      "seoTitle": "Divulgación de Afiliados - Guía Informativa Playdoit",
+      "metaDescription": "Información transparente sobre el modelo de afiliación comercial y monetización de este sitio en relación con Playdoit México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "juego-responsable",
+      "name": "Juego Responsable",
+      "file": "pages/juego-responsable.html",
+      "route": "/juego-responsable",
+      "seoTitle": "Juego Responsable - Guía Playdoit México",
+      "metaDescription": "Información y recursos sobre Juego Responsable en México: prevención, límites de depósito, autoexclusión y líneas de ayuda especializada (+18).",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "politica-privacidad",
+      "name": "Política de Privacidad",
+      "file": "pages/politica-privacidad.html",
+      "route": "/politica-privacidad",
+      "seoTitle": "Política de Privacidad - Guía Informativa Playdoit",
+      "metaDescription": "Política de privacidad y protección de datos personales de este portal conforme a las leyes de privacidad en México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "sobre-nosotros",
+      "name": "Sobre Nosotros",
+      "file": "pages/sobre-nosotros.html",
+      "route": "/sobre-nosotros",
+      "seoTitle": "Sobre Nosotros - Guía Informativa Playdoit México",
+      "metaDescription": "Conoce la identidad de este portal, nuestro enfoque editorial neutro y transparencia sobre la información de Playdoit en México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "terminos-y-condiciones",
+      "name": "Términos y Condiciones",
+      "file": "pages/terminos-y-condiciones.html",
+      "route": "/terminos-y-condiciones",
+      "seoTitle": "Términos y Condiciones - Guía Informativa Playdoit",
+      "metaDescription": "Términos y condiciones de uso de este portal informativo independiente. Revisa las reglas de uso del sitio.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    },
+    {
+      "key": "404",
+      "name": "404",
+      "file": "pages/404.html",
+      "route": "/404",
+      "seoTitle": "Página no encontrada (404) - Playdoit México Guía",
+      "metaDescription": "La página solicitada no fue encontrada. Explora nuestras guías principales sobre apuestas, casino, bonos y la app oficial en México.",
+      "fields": [
+        { "key": "brandName", "type": "text", "selector": "title", "label": "Reviewed app/brand name", "default": "Playdoit" }
+      ]
+    }
+  ]
+}

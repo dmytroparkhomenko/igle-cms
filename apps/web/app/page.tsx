@@ -1,43 +1,110 @@
+import Link from "next/link";
 import { runtime } from "../lib/runtime";
+import { requireActorOrRedirect } from "../lib/session";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const sites = await runtime.siteService.list(runtime.systemActor);
-  const jobs = (await runtime.stateStore.read()).jobs.slice(-5).reverse();
+  const actor = await requireActorOrRedirect();
+  const sites = await runtime.siteService.list(actor);
+  const state = await runtime.stateStore.read();
+
+  const published = sites.filter((site) => site.metadata.status === "published").length;
+  const draft = sites.length - published;
+  const deployedCount = sites.filter((site) => site.productionRevisionId).length;
+  const teamCount = state.users.length;
+
+  const siteById = new Map(sites.map((site) => [site.id, site]));
+  const recentDeployments = state.deployments
+    .slice()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 8);
 
   return (
     <>
       <div className="toolbar">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">Draft and production status for static sites.</p>
+          <p className="muted">Overview of the CMS — signed in as {actor.email}.</p>
         </div>
-        <form action={runtime.createDemoSite}>
-          <button className="button" type="submit">New demo site</button>
-        </form>
       </div>
-      <section className="grid">
+
+      <section className="grid" style={{ marginBottom: 28 }}>
         <article className="card">
           <div className="muted">Total sites</div>
           <h2>{sites.length}</h2>
         </article>
         <article className="card">
           <div className="muted">Published</div>
-          <h2>{sites.filter((site) => site.metadata.status === "published").length}</h2>
+          <h2>{published}</h2>
         </article>
         <article className="card">
-          <div className="muted">Recent jobs</div>
-          <h2>{jobs.length}</h2>
+          <div className="muted">Draft</div>
+          <h2>{draft}</h2>
+        </article>
+        <article className="card">
+          <div className="muted">Deployed to production</div>
+          <h2>{deployedCount}</h2>
+        </article>
+        <article className="card">
+          <div className="muted">Team members</div>
+          <h2>{teamCount}</h2>
         </article>
       </section>
-      <h2>Sites</h2>
+
+      <h2>Recent deployments</h2>
+      <div className="list" style={{ marginBottom: 28 }}>
+        {recentDeployments.map((deployment) => {
+          const site = siteById.get(deployment.siteId);
+          return (
+            <div key={deployment.id} className="list-row">
+              <div className="main">
+                <h3>{site ? site.metadata.name : deployment.siteId}</h3>
+                <p className="muted">
+                  {deployment.target === "aapanel" ? "aaPanel VPS" : "Local filesystem"} · revision #{deployment.revisionNumber} ·{" "}
+                  {new Date(deployment.createdAt).toLocaleString()}
+                </p>
+              </div>
+              <span
+                className="status"
+                style={
+                  deployment.status === "success"
+                    ? { color: "var(--accent)", borderColor: "var(--accent)" }
+                    : { color: "var(--warn)", borderColor: "var(--warn)" }
+                }
+              >
+                {deployment.status}
+              </span>
+            </div>
+          );
+        })}
+        {recentDeployments.length === 0 ? (
+          <div className="list-row">
+            <p className="muted" style={{ margin: 0 }}>No deployments yet.</p>
+          </div>
+        ) : null}
+      </div>
+
+      <h2>Quick links</h2>
       <section className="grid">
-        {sites.map((site) => (
-          <article className="card" key={site.id}>
-            <h3>{site.metadata.name}</h3>
-            <p className="muted">{site.metadata.domain ?? "No production domain yet"}</p>
-            <span className="status">{site.productionRevisionId ? "Production set" : "Never deployed"}</span>
-          </article>
-        ))}
+        <Link href="/sites" className="card card-link">
+          <h3 style={{ margin: 0 }}>Sites</h3>
+          <p className="muted" style={{ margin: "4px 0 0" }}>Manage and deploy your sites</p>
+        </Link>
+        <Link href="/templates" className="card card-link">
+          <h3 style={{ margin: 0 }}>Templates</h3>
+          <p className="muted" style={{ margin: "4px 0 0" }}>Launch a new site from a template</p>
+        </Link>
+        <Link href="/deployments" className="card card-link">
+          <h3 style={{ margin: 0 }}>Deployments</h3>
+          <p className="muted" style={{ margin: "4px 0 0" }}>Full deployment history</p>
+        </Link>
+        {actor.role === "administrator" ? (
+          <Link href="/team" className="card card-link">
+            <h3 style={{ margin: 0 }}>Team</h3>
+            <p className="muted" style={{ margin: "4px 0 0" }}>Manage access and the team password</p>
+          </Link>
+        ) : null}
       </section>
     </>
   );

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Resource Hints for High Priority LCP & Assets -->
+  <link rel="preconnect" href="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="image" href="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/hero-home.webp" type="image/webp" fetchpriority="high">
+  <title>{{page.seoTitle}}</title>
+  <meta name="description" content="{{page.metaDescription}}">
+  <meta name="theme-color" content="#080b14">
+  <meta name="color-scheme" content="dark">
+  <meta name="author" content="{{fields.brandName}}">
+  <link rel="canonical" href="/">
+  <meta property="og:title" content="{{page.seoTitle}}">
+  <meta property="og:description" content="{{page.metaDescription}}">
+  <meta property="og:url" content="/">
+  <meta property="og:site_name" content="{{fields.brandName}}">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:image" content="/og-image.png">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/logo.png" type="image/png">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@600;700;800&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <link href="assets/theme.min.css" rel="stylesheet">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "/#website",
+        "url": "/",
+        "name": "{{fields.brandName}}",
+        "description": "{{page.metaDescription}}",
+        "inLanguage": "pt-BR"
+      },
+      {
+        "@type": "Organization",
+        "@id": "/#organization",
+        "name": "{{fields.brandName}}",
+        "url": "/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/logo.png"
+        }
+      },
+      {
+        "@type": "WebPage",
+        "@id": "/#webpage",
+        "url": "/",
+        "name": "{{page.seoTitle}}",
+        "isPartOf": { "@id": "/#website" },
+        "about": { "@id": "/#organization" },
+        "description": "{{page.metaDescription}}",
+        "inLanguage": "pt-BR"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <a href="#main" class="skip-link">Pular para o conteúdo</a>
+
+  <!-- ===== HEADER ===== -->
+  <header class="site-header">
+    <div class="container-x d-flex align-items-center gap-3" style="height:64px">
+      <a href="./" class="logo" aria-label="{{fields.brandName}} — início">
+        <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/logo.png" alt="{{fields.brandName}}" width="160" height="40" style="height:40px;width:auto">
+      </a>
+
+      <nav aria-label="Menu principal" class="d-none d-lg-block ms-3 me-auto">
+        <ul class="navbar-nav flex-row align-items-center gap-1">
+          <li class="nav-item"><a class="nav-link" href="./" aria-current="page">Início</a></li>
+          <li class="nav-item"><a class="nav-link" href="plataformas-bonus-20-reais/">Plataformas</a></li>
+          <li class="nav-item"><a class="nav-link" href="bonus-20-reais-cadastro/">Bônus no Cadastro</a></li>
+          <li class="nav-item"><a class="nav-link" href="bonus-20-reais-sem-deposito/">Sem Depósito</a></li>
+          <li class="nav-item"><a class="nav-link" href="tigrinho-bonus-20-reais/">Tigrinho</a></li>
+          <li class="nav-item"><a class="nav-link" href="como-funciona/">Como Funciona</a></li>
+          <li class="nav-item"><a class="nav-link" href="blog/">Blog</a></li>
+        </ul>
+      </nav>
+
+      <div class="d-none d-lg-flex align-items-center">
+        <a href="#" class="btn-x btn-gold btn-sm-2 nnn-aff-link" target="_blank" rel="sponsored nofollow noopener noreferrer">Pegar bônus</a>
+      </div>
+
+      <button class="navbar-toggler d-lg-none ms-auto" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileNav" aria-controls="mobileNav" aria-label="Abrir menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"></path></svg>
+      </button>
+    </div>
+
+    <div class="offcanvas offcanvas-end mobile-nav" tabindex="-1" id="mobileNav" aria-label="Menu móvel">
+      <div class="offcanvas-header">
+        <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/logo.png" alt="{{fields.brandName}}" width="128" height="32" style="height:32px">
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
+      </div>
+      <div class="offcanvas-body">
+        <ul class="nav flex-column">
+          <li><a class="nav-link" href="./">Início</a></li>
+          <li><a class="nav-link" href="plataformas-bonus-20-reais/">Plataformas</a></li>
+          <li><a class="nav-link" href="bonus-20-reais-cadastro/">Bônus no Cadastro</a></li>
+          <li><a class="nav-link" href="bonus-20-reais-sem-deposito/">Sem Depósito</a></li>
+          <li><a class="nav-link" href="tigrinho-bonus-20-reais/">Tigrinho</a></li>
+          <li><a class="nav-link" href="como-funciona/">Como Funciona</a></li>
+          <li><a class="nav-link" href="blog/">Blog</a></li>
+        </ul>
+        <a class="btn-x btn-gold btn-block mt-3 nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Pegar 20 reais de bônus</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ===== HERO ===== -->
+    <section class="hero">
+      <div class="container-x">
+        <span class="eyebrow">◆ {{fields.brandName}}</span>
+        <h1 style="margin-top:16px">{{fields.heroTitleHtml | safe}}</h1>
+        <p class="lead">{{fields.heroLeadHtml | safe}}</p>
+        <div class="hero-cta">
+          <a class="btn-x btn-gold btn-lg-x nnn-aff-link" href="{{fields.ctaUrl}}" target="_blank" rel="sponsored nofollow noopener noreferrer">{{fields.ctaLabel}}</a>
+          <a class="btn-x btn-ghost btn-lg-x" href="como-funciona/">Como funciona</a>
+        </div>
+        <div class="hero-art">
+          <a href="#" class="nnn-aff-link d-block" target="_blank" rel="sponsored nofollow noopener noreferrer">
+            <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/hero-home.webp" alt="Bônus de 20 reais grátis para jogar, com mascote tigrinho dourado e moedas" width="1200" height="630" loading="eager" fetchpriority="high" decoding="async" class="site-img">
+          </a>
+        </div>
+        <div class="row g-2 g-sm-3 mt-2">
+          <div class="col-6 col-sm-3"><div class="stat"><b>20</b><span>reais de bônus</span></div></div>
+          <div class="col-6 col-sm-3"><div class="stat"><b>+12</b><span>plataformas avaliadas</span></div></div>
+          <div class="col-6 col-sm-3"><div class="stat"><b>PIX</b><span>saque rápido</span></div></div>
+          <div class="col-6 col-sm-3"><div class="stat"><b>100%</b><span>conteúdo em português</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== EXPLORE ===== -->
+    <section class="section" aria-labelledby="explore-title">
+      <div class="container-x">
+        <div class="section-head">
+          <span class="eyebrow">Explore</span>
+          <h2 id="explore-title" style="margin-top:14px">Tudo sobre o bônus de 20 reais</h2>
+          <p>Escolha o tipo de bônus que você procura. Cada guia tem passo a passo, tabela e dúvidas respondidas.</p>
+        </div>
+        <div class="row g-4">
+          <div class="col-sm-6 col-lg-4">
+            <a href="plataformas-bonus-20-reais/" class="card-x card-glow h-100 d-block">
+              <div class="icon-badge icon-badge-gold">🏆</div>
+              <h3 style="font-size:1.15rem">Plataformas que dão 20 reais de bônus</h3>
+              <p>Ranking das plataformas que oferecem 20 reais de bônus, com avaliação, vantagens e regras.</p>
+              <span class="card-link">Abrir guia →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="bonus-20-reais-cadastro/" class="card-x card-glow h-100 d-block">
+              <div class="icon-badge">👤</div>
+              <h3 style="font-size:1.15rem">20 reais de bônus no cadastro</h3>
+              <p>Como pegar 20 reais de bônus no cadastro: passo a passo, documentos e prazos de liberação.</p>
+              <span class="card-link">Abrir guia →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="bonus-20-reais-sem-deposito/" class="card-x card-glow h-100 d-block">
+              <div class="icon-badge">🎁</div>
+              <h3 style="font-size:1.15rem">20 reais de bônus sem depósito</h3>
+              <p>Bônus de 20 reais sem depósito: o que é, como funciona o rollover e quem oferece.</p>
+              <span class="card-link">Abrir guia →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="tigrinho-bonus-20-reais/" class="card-x card-glow h-100 d-block">
+              <div class="icon-badge">🐯</div>
+              <h3 style="font-size:1.15rem">Tigrinho com bônus de 20 reais</h3>
+              <p>Jogue o Tigrinho usando 20 reais de bônus: como ativar, dicas e plataformas indicadas.</p>
+              <span class="card-link">Abrir guia →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="como-funciona/" class="card-x card-glow h-100 d-block">
+              <div class="icon-badge">🚀</div>
+              <h3 style="font-size:1.15rem">Como funciona o bônus de 20 reais</h3>
+              <p>Entenda como ganhar e usar o bônus de 20 reais em 4 passos simples, do cadastro ao saque.</p>
+              <span class="card-link">Abrir guia →</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== WHY ===== -->
+    <section class="section band-2" aria-labelledby="why-title">
+      <div class="container-x">
+        <div class="row g-4 align-items-center">
+          <div class="col-lg-6">
+            <span class="eyebrow">🎁 Bônus de boas-vindas</span>
+            <h2 id="why-title" style="margin-top:14px">Por que vale a pena pegar 20 reais de bônus?</h2>
+            <p class="muted">O bônus de 20 reais é a forma mais simples de conhecer uma plataforma sem arriscar muito. Com ele, você testa os jogos, sente como funciona o saque no PIX e ainda pode sair no lucro.</p>
+            <ul class="check-list" style="margin-top:18px">
+              <li><span class="text-green">✓</span> <span><strong>Teste sem risco alto:</strong> conheça os jogos gastando pouco do seu dinheiro.</span></li>
+              <li><span class="text-green">✓</span> <span><strong>Saque no PIX:</strong> a maioria libera o saque em minutos, direto na sua conta.</span></li>
+              <li><span class="text-green">✓</span> <span><strong>Várias opções:</strong> <a href="bonus-20-reais-cadastro/">bônus no cadastro</a>, sem depósito ou por indicação.</span></li>
+              <li><span class="text-green">✓</span> <span><strong>Regras claras:</strong> a gente explica o rollover para você não se perder.</span></li>
+            </ul>
+          </div>
+          <div class="col-lg-6">
+            <a href="#" class="nnn-aff-link d-block" target="_blank" rel="sponsored nofollow noopener noreferrer">
+              <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/home-tipos-bonus.webp" alt="Tipos de bônus de 20 reais: no cadastro, sem depósito e por convidar" width="1200" height="630" loading="lazy" decoding="async" class="site-img">
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEPS ===== -->
+    <section class="section" aria-labelledby="steps-title">
+      <div class="container-x">
+        <div class="section-head">
+          <span class="eyebrow">Em 4 passos</span>
+          <h2 id="steps-title" style="margin-top:14px">Como ganhar 20 reais de bônus</h2>
+          <p>Do cadastro ao saque, veja como conseguir o seu bônus de 20 reais rapidamente.</p>
+        </div>
+        <div class="row g-4">
+          <div class="col-6 col-lg-3"><div class="card-x step-card h-100"><div class="step-num">1</div><h3 style="font-size:1.05rem">Escolha a plataforma</h3><p>Veja o ranking e escolha uma plataforma que dá 20 reais de bônus.</p></div></div>
+          <div class="col-6 col-lg-3"><div class="card-x step-card h-100"><div class="step-num">2</div><h3 style="font-size:1.05rem">Faça o cadastro</h3><p>Crie sua conta com seus dados reais e confirme o CPF.</p></div></div>
+          <div class="col-6 col-lg-3"><div class="card-x step-card h-100"><div class="step-num">3</div><h3 style="font-size:1.05rem">Ative o bônus</h3><p>Pegue os 20 reais de bônus no cadastro ou <a href="bonus-20-reais-sem-deposito/">sem depósito.</a></p></div></div>
+          <div class="col-6 col-lg-3"><div class="card-x step-card h-100"><div class="step-num">4</div><h3 style="font-size:1.05rem">Jogue e saque</h3><p>Cumpra o rollover e saque seus ganhos no PIX.</p></div></div>
+        </div>
+        <p class="center" style="margin-top:24px"><a class="btn-x btn-ghost" href="como-funciona/">Ver o passo a passo completo →</a></p>
+      </div>
+    </section>
+
+    <!-- ===== RANKING ===== -->
+    <section class="section band-2" aria-labelledby="rank-title">
+      <div class="container-x">
+        <div class="section-head">
+          <span class="eyebrow">🏆 Ranking</span>
+          <h2 id="rank-title" style="margin-top:14px">Plataformas que dão 20 reais de bônus</h2>
+          <p>Comparamos bônus, depósito mínimo, rollover e velocidade do saque no PIX.</p>
+        </div>
+        <div class="rank-list">
+          <article class="card-x rank-card is-top nnn-aff-link">
+            <div class="rank-badge">1</div>
+            <div class="rank-meta">
+              <h3>Tigre Dourado</h3>
+              <span class="stars" aria-label="Nota 4.9 de 5">★★★★★ <span class="muted" style="font-size:0.8rem">4.9</span></span>
+              <p class="muted" style="margin:6px 0 0;font-size:0.9rem"><strong class="text-gold">R$ 20 no cadastro</strong> · Depósito: A partir de R$ 1 · Rollover 3x</p>
+              <div class="rank-tags"><span class="tag tag-gold">Mais escolhida</span><span class="tag">Saque rápido</span><span class="tag">PIX</span></div>
+            </div>
+            <div style="display:grid;gap:8px;min-width:150px">
+              <a class="btn-x btn-gold nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Pegar bônus</a>
+              <span class="muted center" style="font-size:0.78rem">⚡ PIX em minutos</span>
+            </div>
+          </article>
+          <article class="card-x rank-card nnn-aff-link">
+            <div class="rank-badge">2</div>
+            <div class="rank-meta">
+              <h3>Ouro Bet</h3>
+              <span class="stars" aria-label="Nota 4.7 de 5">★★★★★ <span class="muted" style="font-size:0.8rem">4.7</span></span>
+              <p class="muted" style="margin:6px 0 0;font-size:0.9rem"><strong class="text-gold">R$ 20 sem depósito</strong> · Depósito: Não exige · Rollover 5x</p>
+              <div class="rank-tags"><span class="tag tag-gold">Sem depósito</span><span class="tag">App próprio</span></div>
+            </div>
+            <div style="display:grid;gap:8px;min-width:150px">
+              <a class="btn-x btn-gold nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Pegar bônus</a>
+              <span class="muted center" style="font-size:0.78rem">⚡ PIX em até 1h</span>
+            </div>
+          </article>
+          <article class="card-x rank-card nnn-aff-link">
+            <div class="rank-badge">3</div>
+            <div class="rank-meta">
+              <h3>Sorte Real</h3>
+              <span class="stars" aria-label="Nota 4.6 de 5">★★★★★ <span class="muted" style="font-size:0.8rem">4.6</span></span>
+              <p class="muted" style="margin:6px 0 0;font-size:0.9rem"><strong class="text-gold">R$ 20 + giros</strong> · Depósito: A partir de R$ 5 · Rollover 4x</p>
+              <div class="rank-tags"><span class="tag tag-gold">Giros grátis</span><span class="tag">Tigrinho</span></div>
+            </div>
+            <div style="display:grid;gap:8px;min-width:150px">
+              <a class="btn-x btn-gold nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Pegar bônus</a>
+              <span class="muted center" style="font-size:0.78rem">⚡ PIX em minutos</span>
+            </div>
+          </article>
+        </div>
+        <div style="margin-top:24px">
+          <div class="table-wrap">
+            <table class="data">
+              <caption>Comparativo das plataformas que dão 20 reais de bônus (exemplo ilustrativo)</caption>
+              <thead><tr><th>#</th><th>Plataforma</th><th>Bônus</th><th>Depósito mínimo</th><th>Rollover</th><th>Saque (PIX)</th><th>Nota</th></tr></thead>
+              <tbody>
+                <tr><td><b>1</b></td><td><b>Tigre Dourado</b></td><td class="text-gold">R$ 20 no cadastro</td><td>A partir de R$ 1</td><td>3x</td><td>PIX em minutos</td><td>4.9 ★</td></tr>
+                <tr><td><b>2</b></td><td><b>Ouro Bet</b></td><td class="text-gold">R$ 20 sem depósito</td><td>Não exige</td><td>5x</td><td>PIX em até 1h</td><td>4.7 ★</td></tr>
+                <tr><td><b>3</b></td><td><b>Sorte Real</b></td><td class="text-gold">R$ 20 + giros</td><td>A partir de R$ 5</td><td>4x</td><td>PIX em minutos</td><td>4.6 ★</td></tr>
+                <tr><td><b>4</b></td><td><b>Verde Play</b></td><td class="text-gold">R$ 20 por convidar</td><td>A partir de R$ 1</td><td>6x</td><td>PIX em até 2h</td><td>4.4 ★</td></tr>
+                <tr><td><b>5</b></td><td><b>Panda Win</b></td><td class="text-gold">R$ 20 no cadastro</td><td>A partir de R$ 10</td><td>5x</td><td>PIX no mesmo dia</td><td>4.2 ★</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p class="center" style="margin-top:24px"><a class="btn-x btn-gold nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Ver ranking completo →</a></p>
+      </div>
+    </section>
+
+    <!-- ===== TIGRINHO ===== -->
+    <section class="section" aria-labelledby="tigrinho-title">
+      <div class="container-x">
+        <div class="row g-4 align-items-center">
+          <div class="col-lg-6">
+            <a href="#" class="nnn-aff-link d-block" target="_blank" rel="sponsored nofollow noopener noreferrer">
+              <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/home-tigrinho.webp" alt="Jogue o tigrinho com bônus de 20 reais" width="1200" height="630" loading="lazy" decoding="async" class="site-img">
+            </a>
+          </div>
+          <div class="col-lg-6">
+            <span class="eyebrow">🐯 Mais procurado</span>
+            <h2 id="tigrinho-title" style="margin-top:14px">Jogue o Tigrinho com bônus de 20 reais</h2>
+            <p class="muted">O jogo do tigrinho é um dos queridinhos dos brasileiros. Com o bônus de 20 reais, você pode girar os rolos e testar a sua sorte sem comprometer o orçamento.</p>
+            <ul class="tips-list" style="margin-top:16px">
+              <li>Use o bônus para entender o ritmo do jogo antes de apostar valores maiores.</li>
+              <li>Defina um limite de tempo e de dinheiro por sessão.</li>
+              <li>Prefira plataformas com saque no PIX e regras de rollover baixas.</li>
+            </ul>
+            <p style="margin-top:18px"><a class="btn-x btn-gold nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Ver tigrinho com bônus →</a></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== BLOG ===== -->
+    <section class="section band-2" aria-labelledby="blog-title">
+      <div class="container-x">
+        <div class="section-head">
+          <span class="eyebrow">Blog</span>
+          <h2 id="blog-title" style="margin-top:14px">Dicas e guias sobre bônus</h2>
+          <p>Conteúdos para você aproveitar melhor cada bônus de 20 reais.</p>
+        </div>
+        <div class="row g-4">
+          <div class="col-sm-6 col-lg-4">
+            <a href="blog/como-ganhar-20-reais-de-bonus/" class="card-x card-glow h-100 d-block">
+              <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/blog-como-ganhar.webp" alt="Como ganhar 20 reais de bônus em 2026" width="1200" height="630" loading="lazy" decoding="async" class="site-img" style="margin-bottom:14px">
+              <span class="tag">Guias</span>
+              <h3 style="margin-top:10px">Como ganhar 20 reais de bônus em 2026</h3>
+              <p>Um guia direto para conseguir 20 reais de bônus de forma segura, do cadastro até o saque.</p>
+              <span class="card-link">Ler artigo →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="blog/bonus-sem-deposito-vale-a-pena/" class="card-x card-glow h-100 d-block">
+              <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/blog-sem-deposito.webp" alt="Bônus sem depósito vale a pena? Veja a verdade" width="1200" height="630" loading="lazy" decoding="async" class="site-img" style="margin-bottom:14px">
+              <span class="tag">Análises</span>
+              <h3 style="margin-top:10px">Bônus sem depósito vale a pena? Veja a verdade</h3>
+              <p>Analisamos os prós e contras do bônus de 20 reais sem depósito e quando ele compensa.</p>
+              <span class="card-link">Ler artigo →</span>
+            </a>
+          </div>
+          <div class="col-sm-6 col-lg-4">
+            <a href="blog/o-que-e-rollover-bonus/" class="card-x card-glow h-100 d-block">
+              <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/blog-rollover.webp" alt="O que é rollover de bônus? Entenda a regra de uma vez" width="1200" height="630" loading="lazy" decoding="async" class="site-img" style="margin-bottom:14px">
+              <span class="tag">Guias</span>
+              <h3 style="margin-top:10px">O que é rollover de bônus? Entenda a regra de uma vez</h3>
+              <p>O rollover é a regra que mais confunde os jogadores. Explicamos com exemplos simples.</p>
+              <span class="card-link">Ler artigo →</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SEO ARTICLE ===== -->
+    <section class="section" aria-labelledby="seo-title">
+      <div class="container-x">
+        <div class="article prose">
+          <h2 id="seo-title">Bônus de 20 reais: o guia completo do Bônus 20 Reais</h2>
+          <p class="lead">O <strong>bônus de 20 reais</strong> virou uma das promoções mais buscadas pelos jogadores brasileiros — e não é à toa. Com apenas 20 reais de bônus dá para experimentar slots, crash games e o famoso <a href="tigrinho-bonus-20-reais/">tigrinho</a> sem precisar investir muito. Aqui no <strong>bonus20reais.com</strong>, nossa missão é simplificar essa busca: reunimos em um só lugar as <a href="plataformas-bonus-20-reais/">plataformas</a> que dão 20 reais de bônus, explicamos cada tipo de oferta e mostramos como sacar os ganhos pelo PIX.</p>
+          <h3>Quais são os tipos de bônus de 20 reais?</h3>
+          <p>Nem todo bônus de 20 reais funciona da mesma forma. Para escolher bem, vale conhecer as principais modalidades disponíveis no mercado <a href="https://pt.wikipedia.org/wiki/Campeonato_Brasileiro_de_Futebol" target="_blank" rel="noopener noreferrer">brasileiro</a>:</p>
+          <ul>
+            <li><strong>20 reais de bônus no cadastro:</strong> liberado assim que você cria a conta e confirma seus dados.</li>
+            <li><strong>20 reais de bônus sem depósito:</strong> você recebe o valor sem precisar colocar dinheiro, apenas se cadastrando.</li>
+            <li><strong>Plataforma que dá 20 reais de bônus por convidar:</strong> você ganha ao indicar amigos que também se cadastram.</li>
+            <li><strong>Bônus para o tigrinho:</strong> crédito direcionado para jogos como o Fortune Tiger.</li>
+          </ul>
+          <h3>Como escolher uma boa plataforma</h3>
+          <p>Antes de pegar qualquer 20 reais de bônus, confira se a plataforma é confiável. Use esta checagem rápida:</p>
+          <div class="table-wrap" style="margin:18px 0">
+            <table class="data">
+              <caption>O que conferir antes de pegar o bônus de 20 reais</caption>
+              <thead><tr><th>Critério</th><th>Por que importa</th><th>Ideal</th></tr></thead>
+              <tbody>
+                <tr><td><b>Licença</b></td><td>Mostra que a plataforma opera de forma regular no Brasil.</td><td>Licença válida (SPA/MF)</td></tr>
+                <tr><td><b>Rollover</b></td><td>Quanto menor, mais fácil liberar o saque.</td><td>Entre 1x e 5x</td></tr>
+                <tr><td><b>Depósito mínimo</b></td><td>Define quanto você precisa colocar (quando exigido).</td><td>A partir de R$ 1</td></tr>
+                <tr><td><b>Saque no PIX</b></td><td>Garante que você recebe rápido.</td><td>Em minutos</td></tr>
+                <tr><td><b>Suporte</b></td><td>Ajuda em caso de problemas.</td><td>24h em português</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>O que é rollover e por que ele importa</h3>
+          <p>O rollover é a regra que diz quantas vezes você precisa apostar o valor do bônus antes de sacar. Por exemplo: com um bônus de 20 reais e rollover de 3x, é preciso movimentar R$ 60 em apostas para liberar o saldo. Quanto menor o rollover, mais rápido você consegue transformar o bônus em dinheiro real no seu PIX. Por isso, sempre damos preferência às plataformas com regras mais baixas e transparentes.</p>
+          <h3>Dicas para aproveitar melhor o seu bônus</h3>
+          <ul class="tips-list">
+            <li>Leia os termos da promoção antes de ativar o <a href="./">bônus de 20 reais</a>.</li>
+            <li>Comece com apostas menores para o bônus durar mais tempo.</li>
+            <li>Defina um orçamento e um limite de tempo para cada sessão.</li>
+            <li>Use sempre seus dados reais para não travar o saque.</li>
+            <li>Jogue por diversão, nunca como fonte de renda.</li>
+          </ul>
+          <p>Pronto para começar? Veja agora as plataformas que dão 20 reais de bônus, entenda como pegar <a href="bonus-20-reais-cadastro/">20 reais de bônus no cadastro</a> ou descubra as ofertas de 20 reais de bônus sem depósito. Se preferir começar do zero, comece pelo nosso guia de como funciona o bônus de 20 reais.</p>
+          <div class="notice" style="margin-top:24px">
+            <span>⚠</span>
+            <span><strong>Jogue com responsabilidade.</strong> Apostas são destinadas a maiores de 18 anos e envolvem riscos. O bonus20reais.com é um portal informativo e não opera jogos de azar.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== FAQ ===== -->
+    <section class="section" id="faq" aria-labelledby="faq-title">
+      <div class="container-x">
+        <div class="section-head">
+          <span class="eyebrow">FAQ</span>
+          <h2 id="faq-title" style="margin-top:14px">Dúvidas frequentes sobre o bônus de 20 reais</h2>
+        </div>
+        <div class="faq" style="max-width:820px;margin:0 auto">
+          <div class="accordion" id="faqAccordion">
+            <div class="accordion-item">
+              <h3 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" aria-expanded="true" aria-controls="faq1">O que é o bônus de 20 reais?</button></h3>
+              <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion"><div class="accordion-body"><p>O bônus de 20 reais é um valor promocional de R$ 20 que algumas plataformas oferecem para novos jogadores. Ele pode vir no cadastro, sem depósito ou ao convidar amigos, e serve para você testar os jogos sem gastar muito do próprio dinheiro.</p></div></div>
+            </div>
+            <div class="accordion-item">
+              <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2">Como conseguir 20 reais de bônus de graça?</button></h3>
+              <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body"><p>Você consegue 20 reais de bônus de graça escolhendo uma plataforma confiável, criando sua conta e ativando a promoção. Em alguns casos o bônus é liberado só com o cadastro; em outros, é preciso fazer um pequeno depósito via PIX.</p></div></div>
+            </div>
+            <div class="accordion-item">
+              <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3">Preciso depositar para ganhar os 20 reais de bônus?</button></h3>
+              <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body"><p>Nem sempre. Existem ofertas de 20 reais de bônus sem depósito, em que basta se cadastrar. Outras pedem um depósito mínimo, muitas vezes a partir de R$ 1, para liberar o valor.</p></div></div>
+            </div>
+            <div class="accordion-item">
+              <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4">Dá para sacar o bônus de 20 reais?</button></h3>
+              <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body"><p>Você não saca o bônus em si, mas sim os ganhos obtidos com ele, depois de cumprir o rollover (a regra que diz quantas vezes o valor precisa ser apostado). Cumprida a regra, o saldo cai no seu PIX.</p></div></div>
+            </div>
+            <div class="accordion-item">
+              <h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5">O bonus20reais.com é uma casa de apostas?</button></h3>
+              <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body"><p>Não. O bonus20reais.com é um site informativo e independente. Nós comparamos plataformas, explicamos as regras dos bônus e ajudamos você a jogar de forma segura. Apostar é para maiores de 18 anos.</p></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== CTA ===== -->
+    <section class="section">
+      <div class="container-x">
+        <div class="cta-band">
+          <span class="eyebrow">⚡ Comece agora</span>
+          <h2 style="margin-top:14px">Pronto para garantir seu bônus de 20 reais?</h2>
+          <p>Escolha uma plataforma confiável, faça o cadastro e comece a jogar com seu bônus hoje mesmo.</p>
+          <div class="hero-cta" style="margin-inline:auto">
+            <a class="btn-x btn-gold btn-lg-x nnn-aff-link" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">Ver plataformas</a>
+            <a class="btn-x btn-ghost btn-lg-x" href="como-funciona/">Como funciona</a>
+          </div>
+          <p style="margin-top:16px;font-size:0.8rem" class="muted">+18. Jogue com responsabilidade. Apostas envolvem risco.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="site-footer">
+    <div class="container-x">
+      <div class="row g-4 gx-lg-5">
+        <div class="col-lg-5 footer-brand">
+          <a class="logo" href="./" aria-label="{{fields.brandName}} — início">
+            <img src="https://pub-d489580362ce4ea8a352b2fadfe41499.r2.dev/bonus20reais/logo.png" alt="{{fields.brandName}}" width="160" height="40" style="height:40px;width:auto">
+          </a>
+          <p>O <strong>bonus20reais.com</strong> é um guia informativo independente sobre o bônus de 20 reais no Brasil. Comparamos plataformas, explicamos as regras e ajudamos você a jogar de forma segura e responsável.</p>
+          <div class="footer-badges">
+            <span class="badge-pill plus18">+18</span>
+            <span class="badge-pill">◆ PIX</span>
+            <span class="badge-pill">🛡 Jogo seguro</span>
+          </div>
+        </div>
+        <div class="col-6 col-lg-2 footer-col">
+          <h4>Páginas</h4>
+          <ul>
+            <li><a href="plataformas-bonus-20-reais/">Plataformas com 20 reais de bônus</a></li>
+            <li><a href="bonus-20-reais-cadastro/">Bônus no cadastro</a></li>
+            <li><a href="bonus-20-reais-sem-deposito/">Bônus sem depósito</a></li>
+            <li><a href="tigrinho-bonus-20-reais/">Tigrinho com bônus</a></li>
+            <li><a href="como-funciona/">Como funciona</a></li>
+          </ul>
+        </div>
+        <div class="col-6 col-lg-2 footer-col">
+          <h4>Ajuda</h4>
+          <ul>
+            <li><a href="perguntas-frequentes/">Perguntas frequentes</a></li>
+            <li><a href="blog/">Blog</a></li>
+            <li><a href="sobre/">Sobre nós</a></li>
+            <li><a href="jogo-responsavel/">Jogo Responsável (+18)</a></li>
+            <li><a href="termos/">Termos e Condições</a></li>
+            <li><a href="privacidade/">Política de Privacidade</a></li>
+          </ul>
+        </div>
+        <div class="col-lg-3 footer-col">
+          <h4>Receba os melhores bônus</h4>
+          <p class="muted" style="font-size:0.9rem;margin-bottom:12px">Novidades de bônus de 20 reais direto no seu e-mail.</p>
+          <form aria-label="Newsletter" action="#">
+            <label for="nl-email" style="position:absolute;left:-9999px">E-mail</label>
+            <input id="nl-email" type="email" placeholder="Seu melhor e-mail" autocomplete="email" style="width:100%;height:46px;padding:0 14px;border-radius:12px;background:var(--surface);border:1px solid var(--border);color:var(--text);margin-bottom:10px">
+            <button type="submit" class="btn-x btn-gold btn-block">Inscrever-se</button>
+          </form>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p style="margin-bottom:6px">Jogue com responsabilidade. Apostas são destinadas a maiores de 18 anos e envolvem riscos financeiros. Em caso de necessidade, procure ajuda especializada.</p>
+        <p style="margin:0">© <span data-year>2026</span> bonus20reais.com — Todos os direitos reservados.</p>
+      </div>
+    </div>
+  </footer>
+  <script src="assets/main.js" defer></script>
+</body>
+</html>

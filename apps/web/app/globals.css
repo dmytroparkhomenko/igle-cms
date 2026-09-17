@@ -54,13 +54,14 @@ a {
   color: var(--muted);
 }
 
-.nav a:first-child {
+.nav a.active {
   background: #e8f4f2;
   color: var(--accent);
 }
 
 .main {
   padding: 28px;
+  min-width: 0;
 }
 
 .toolbar {
@@ -78,6 +79,23 @@ a {
   border-radius: 6px;
   padding: 9px 12px;
   font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button.button {
+  font: inherit;
+  cursor: pointer;
+}
+
+input[type="text"],
+input[type="file"] {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
 }
 
 .grid {
@@ -93,6 +111,81 @@ a {
   padding: 16px;
 }
 
+.card-link {
+  display: block;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.card-link:hover {
+  border-color: var(--accent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+  min-width: 0;
+}
+
+.list-row:last-child {
+  border-bottom: none;
+}
+
+a.list-row:hover {
+  background: var(--bg);
+}
+
+.list-row .thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.list-row .main {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-row .main h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row .main p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-row .side {
+  flex-shrink: 0;
+  font-size: 12.5px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -104,4 +197,451 @@ a {
   padding: 3px 8px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* Radio-driven show/hide, no JS needed. :has() reaches the radio regardless of label nesting. */
+.mode-switch .mode-panel {
+  display: none;
+}
+
+.mode-switch:has(input[name="robotsMode"][value="cms-generated"]:checked) .mode-panel[data-panel="cms-generated"] {
+  display: block;
+}
+
+.mode-switch:has(input[name="robotsMode"][value="manual"]:checked) .mode-panel[data-panel="manual"] {
+  display: block;
+}
+
+.diff-view {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.diff-add {
+  color: #146c14;
+  background: #e9f7ec;
+  display: block;
+}
+
+.diff-remove {
+  color: #a12b2b;
+  background: #fbeaea;
+  display: block;
+}
+
+.diff-hunk {
+  color: var(--accent);
+  display: block;
+}
+
+.danger-zone {
+  border-color: var(--warn);
+}
+
+/* ===== Deploy status modal ===== */
+
+.deploy-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 30, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.deploy-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 28px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(20, 24, 30, 0.18);
+}
+
+.deploy-modal h3 {
+  margin: 12px 0 0;
+  font-size: 16px;
+}
+
+.deploy-spinner {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: deploy-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deploy-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+@keyframes deploy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== Version status tiles (last saved / currently deployed) ===== */
+
+.version-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.version-tile {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px 16px;
+}
+
+.version-tile .version-tile-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+.version-tile .version-tile-value {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.version-tile .version-tile-meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+/* ===== Settings card: quick links + labeled sections ===== */
+
+.settings-card {
+  max-width: 720px;
+  margin-bottom: 28px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-card-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-card-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.quick-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.quick-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--bg);
+}
+
+.quick-links a:hover {
+  border-color: var(--accent);
+}
+
+.settings-card form {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.settings-section {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-section:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field label {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Template gallery: live scaled-down iframe previews ===== */
+
+.template-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.template-card {
+  padding: 0;
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.template-thumb {
+  width: 100%;
+  aspect-ratio: 1400 / 875;
+  overflow: hidden;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.template-thumb iframe {
+  display: block;
+  width: 1400px;
+  height: 875px;
+  border: 0;
+  pointer-events: none;
+  transform-origin: top left;
+  transform: scale(calc(100cqw / 1400px));
+}
+
+.template-card-body {
+  padding: 14px 16px;
+}
+
+.template-preview-frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.template-detail-layout {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .template-detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Shared preview frame: mobile viewport toggle + full screen ===== */
+
+.preview-frame {
+  position: relative;
+}
+
+.preview-frame-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.preview-frame-viewport-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.preview-frame-toolbar button {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.preview-frame-viewport-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.preview-frame-fullscreen-btn {
+  border-left: 1px solid var(--line) !important;
+  margin-left: 2px;
+  padding-left: 10px !important;
+  color: var(--accent) !important;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.preview-frame-body {
+  container-type: size;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--bg);
+}
+
+/* A real device viewport (1440x900 desktop, 390x844 mobile — see PreviewFrame.tsx) rendered at
+   its actual pixel size, then scaled to fit whatever room is available (container-query width
+   AND height both considered via min(), so a tall narrow phone in a wide short box scales by
+   height instead of overflowing) — the preview always corresponds to a real screen, at any size. */
+.preview-frame-device {
+  --preview-scale: min(calc(100cqw / var(--device-w)), calc(100cqh / var(--device-h)));
+  width: calc(var(--device-w) * 1px * var(--preview-scale));
+  height: calc(var(--device-h) * 1px * var(--preview-scale));
+  overflow: hidden;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.preview-frame-body.is-mobile .preview-frame-device {
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.preview-frame-device iframe {
+  width: calc(var(--device-w) * 1px);
+  height: calc(var(--device-h) * 1px);
+  transform: scale(var(--preview-scale));
+  transform-origin: top left;
+  border: 0;
+  display: block;
+  background: #fff;
+}
+
+.preview-frame:fullscreen {
+  height: 100vh;
+  aspect-ratio: unset;
+  padding: 44px 16px 16px;
+  box-sizing: border-box;
+  background: var(--panel);
+}
+
+.preview-frame:fullscreen .preview-frame-toolbar {
+  top: 12px;
+  right: 16px;
+}
+
+/* ===== Login page ===== */
+
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 340px;
+}
+
+/* ===== Sidebar account block ===== */
+
+.sidebar-account {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 6px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Visual editor: full screen includes the edit sidebar, not just the preview ===== */
+
+.visual-editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 16px;
+  align-items: start;
+}
+
+.visual-editor-shell.is-fullscreen {
+  background: var(--panel);
+  padding: 16px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  height: 100vh;
+}
+
+@media (max-width: 900px) {
+  .visual-editor-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -33,6 +33,8 @@ export interface Actor {
   email: string;
   role: Role;
   siteGrants?: SiteGrant[];
+  /** Independent of role — gates deploying/moving a site onto a server flagged `restricted`. */
+  canDeployRestricted?: boolean;
 }
 
 const adminCapabilities = new Set<Capability>(capabilities);

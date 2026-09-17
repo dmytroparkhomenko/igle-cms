@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { assertCan, normalizeSitePath, resolveInside, type Actor } from "@igle/shared";
+import { assertCan, effectiveSiteLanguageTag, matchesSiteLanguage, normalizeSitePath, resolveInside, type Actor } from "@igle/shared";
 import { parsePageSEO } from "@igle/html-engine";
 import { readPagesMetadata, writePagesMetadata, writeSiteMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
 import { JsonStateStore, id } from "./state-store.js";
+import { extractZipBuffer } from "./zip-extract.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
 
 export interface ImportReport {
@@ -41,6 +43,20 @@ export class ImportService {
     }
   }
 
+  async importZip(site: SiteRecord, zipBuffer: Buffer, actor: Actor): Promise<{ revisionNumber: number; report: ImportReport }> {
+    assertCan(actor, "sites.create");
+    const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "igle-zip-"));
+    try {
+      const zipReport = await extractZipBuffer(zipBuffer, stagingDir);
+      const sourceDirectory = await resolveSingleRootDirectory(stagingDir);
+      const result = await this.importDirectory(site, sourceDirectory, actor);
+      result.report.rejectedFiles.push(...zipReport.rejectedFiles);
+      return result;
+    } finally {
+      await fs.rm(stagingDir, { recursive: true, force: true });
+    }
+  }
+
   async importDirectory(site: SiteRecord, sourceDirectory: string, actor: Actor): Promise<{ revisionNumber: number; report: ImportReport }> {
     assertCan(actor, "sites.create");
     const report: ImportReport = {
@@ -57,6 +73,22 @@ export class ImportService {
 
     await clearImportedFiles(site.repoPath);
     await copyImportTree(sourceDirectory, site.repoPath, report);
+
+    // A freshly-created site always starts at the "en"/"en-US" default (SOT default, not a
+    // real signal) — detect the imported content's actual <html lang> before indexing pages,
+    // so both the site's language setting and each page's fieldStates.lang ("inherited" vs
+    // "explicit") reflect what was actually imported, not the placeholder default.
+    const detectedLanguage = await detectDominantLanguage(site.repoPath);
+    if (detectedLanguage) {
+      site.metadata.language = detectedLanguage.language;
+      if (detectedLanguage.country) {
+        site.metadata.country = detectedLanguage.country;
+        site.metadata.locale = `${detectedLanguage.language}-${detectedLanguage.country}`;
+      } else {
+        site.metadata.locale = detectedLanguage.language;
+      }
+    }
+
     const pages = await indexPages(site, report);
     site.metadata.sourceType = "import";
     site.metadata.updatedAt = new Date().toISOString();
@@ -102,6 +134,66 @@ export class ImportService {
 
     return { revisionNumber: revision.revisionNumber, report };
   }
+
+  /**
+   * Rebuilds the page index from the site's current files (SOT-06). Needed after any
+   * operation that changes files without going through a service that maintains the index
+   * itself — restoring a revision is the main case: the files change, but nothing else
+   * updates .igle/pages.json or the in-memory page records for the caller.
+   */
+  async reindexSite(site: SiteRecord, actor: Actor): Promise<PageIndexRecord[]> {
+    assertCan(actor, "sites.read", site.id);
+    const report: ImportReport = {
+      pagesFound: 0,
+      imagesFound: 0,
+      stylesheetsFound: 0,
+      javascriptFilesFound: 0,
+      totalBytes: 0,
+      ignoredFiles: [],
+      rejectedFiles: [],
+      ambiguousSeoFiles: [],
+      serverSideFiles: []
+    };
+    const pages = await indexPages(site, report);
+    await writePagesMetadata(site.repoPath, {
+      pages: pages.map((page) => ({
+        id: page.id,
+        filePath: page.filePath,
+        route: page.route,
+        internalName: page.internalName,
+        inSitemap: page.inSitemap,
+        fieldStates: {
+          seoTitle: page.fieldStates.seoTitle ?? "absent",
+          metaDescription: page.fieldStates.metaDescription ?? "absent",
+          h1: page.fieldStates.h1 ?? "absent",
+          canonical: page.fieldStates.canonical ?? "absent",
+          robots: page.fieldStates.robots ?? "absent",
+          ogTitle: page.fieldStates.ogTitle ?? "absent",
+          ogDescription: page.fieldStates.ogDescription ?? "absent"
+        },
+        lastWrittenHashes: {}
+      }))
+    });
+
+    await this.stateStore.update((state) => {
+      state.pages = state.pages.filter((page) => page.siteId !== site.id).concat(pages);
+    });
+
+    return pages;
+  }
+}
+
+const ignoredTopLevelDirnames = new Set(["__MACOSX", ".git"]);
+
+async function resolveSingleRootDirectory(stagingDir: string): Promise<string> {
+  const entries = (await fs.readdir(stagingDir, { withFileTypes: true })).filter(
+    (entry) => !ignoredBasenames.has(entry.name) && !ignoredTopLevelDirnames.has(entry.name)
+  );
+  const [onlyEntry] = entries;
+  if (entries.length === 1 && onlyEntry && onlyEntry.isDirectory()) {
+    return path.join(stagingDir, onlyEntry.name);
+  }
+  return stagingDir;
 }
 
 async function clearImportedFiles(repoPath: string): Promise<void> {
@@ -185,7 +277,8 @@ async function indexPages(site: SiteRecord, report: ImportReport): Promise<PageI
         canonical: parsed.canonical.state,
         robots: parsed.robots.state,
         ogTitle: parsed.ogTitle.state,
-        ogDescription: parsed.ogDescription.state
+        ogDescription: parsed.ogDescription.state,
+        lang: parsed.lang === undefined ? "absent" : matchesSiteLanguage(parsed.lang, effectiveSiteLanguageTag(site.metadata)) ? "inherited" : "explicit"
       },
       h1Count: parsed.h1Count,
       wordCount: parsed.wordCount,
@@ -198,6 +291,22 @@ async function indexPages(site: SiteRecord, report: ImportReport): Promise<PageI
   }
 
   return pages;
+}
+
+async function detectDominantLanguage(repoPath: string): Promise<{ language: string; country?: string } | undefined> {
+  const htmlFiles = (await listFiles(repoPath)).filter((file) => [".html", ".htm"].includes(path.extname(file).toLowerCase()));
+  const counts = new Map<string, number>();
+  for (const filePath of htmlFiles) {
+    const html = await fs.readFile(resolveInside(repoPath, filePath), "utf8").catch(() => "");
+    const match = html.match(/<html[^>]*\slang=["']([^"']+)["']/i);
+    const tag = match?.[1]?.trim();
+    if (tag) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  const dominantTag = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  if (!dominantTag) return undefined;
+  const [language, country] = dominantTag.split("-");
+  if (!language) return undefined;
+  return country ? { language: language.toLowerCase(), country: country.toUpperCase() } : { language: language.toLowerCase() };
 }
 
 async function listFiles(root: string, relative = ""): Promise<string[]> {
@@ -215,7 +324,7 @@ async function listFiles(root: string, relative = ""): Promise<string[]> {
   return files;
 }
 
-function routeForFile(filePath: string, urlStyle: "html-ext" | "clean" | "clean-slash"): string {
+export function routeForFile(filePath: string, urlStyle: "html-ext" | "clean" | "clean-slash"): string {
   if (filePath === "index.html" || filePath === "index.htm") return "/";
   const withoutExt = filePath.replace(/\.(html|htm)$/i, "");
   if (urlStyle === "html-ext") return `/${filePath}`;
@@ -224,10 +333,12 @@ function routeForFile(filePath: string, urlStyle: "html-ext" | "clean" | "clean-
 }
 
 function internalName(filePath: string): string {
-  const name = filePath.replace(/\.(html|htm)$/i, "").split("/").filter(Boolean).at(-1) ?? "Home";
-  return name
-    .replace(/[-_]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const segments = filePath.replace(/\.(html|htm)$/i, "").split("/").filter(Boolean);
+  const last = segments.at(-1);
+  // "reviews/best-vpn/index.html" names the page from its folder ("Best Vpn"), not the
+  // literal filename — otherwise every folder-style page in a site is named "Index".
+  const name = last === "index" ? (segments.length > 1 ? segments.at(-2) : "home") : last;
+  return (name ?? "Home").replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function hash(value: string): string {

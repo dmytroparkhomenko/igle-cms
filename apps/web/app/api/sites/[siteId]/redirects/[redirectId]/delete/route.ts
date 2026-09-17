@@ -1,0 +1,31 @@
+import { NextResponse } from "next/server";
+import { apiError, IgleError } from "@igle/shared";
+import { runtime } from "../../../../../../../lib/runtime";
+import { requireActor } from "../../../../../../../lib/session";
+
+export async function POST(request: Request, context: { params: Promise<{ siteId: string; redirectId: string }> }) {
+  const accept = request.headers.get("accept") ?? "";
+  const wantsRedirect = accept.includes("text/html");
+  const { siteId, redirectId } = await context.params;
+
+  try {
+    const site = await runtime.siteService.get(siteId, (await requireActor()));
+    if (!site) throw new IgleError("SITE_NOT_FOUND", "Site was not found.", 404);
+
+    await runtime.redirectService.deleteRedirect(site, redirectId, (await requireActor()));
+
+    if (wantsRedirect) {
+      return NextResponse.redirect(new URL(`/sites/${site.id}/redirects?deleted=1`, request.url), { status: 303 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const formatted = apiError(error);
+    if (wantsRedirect) {
+      return NextResponse.redirect(
+        new URL(`/sites/${siteId}/redirects?error=${encodeURIComponent(formatted.body.error.message)}`, request.url),
+        { status: 303 }
+      );
+    }
+    return NextResponse.json(formatted.body, { status: formatted.status });
+  }
+}

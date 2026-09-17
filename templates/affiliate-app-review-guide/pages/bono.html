@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{page.seoTitle}}</title>
+  <meta name="description" content="{{page.metaDescription}}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="/bono">
+  <!-- Favicon Package -->
+  <link rel="icon" type="image/x-icon" href="./assets/favicon.ico">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/img/favicon-16x16.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/img/favicon-32x32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/img/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="./assets/img/favicon.svg">
+
+  <!-- Hreflang Tags -->
+  <link rel="alternate" hreflang="es-MX" href="/bono" />
+  <link rel="alternate" hreflang="x-default" href="/bono" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="{{page.seoTitle}}">
+  <meta property="og:description" content="{{page.metaDescription}}">
+  <meta property="og:url" content="/bono">
+  <meta property="og:image" content="/assets/img/bono_hero-800.webp">
+  <meta property="og:locale" content="es_MX">
+
+  <!-- Typography & CSS -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/main.css">
+
+  <!-- JS -->
+  <script src="./assets/js/main.js" defer></script>
+
+  <!-- Schema.org Breadcrumb & FAQ -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Inicio",
+            "item": "/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Bono",
+            "item": "/bono"
+          }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "¿Cómo saber si un bono de {{fields.brandName}} está activo?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Debes verificar la pestaña de promociones en el sitio web de {{fields.brandName}} o en el menú de tu cuenta de usuario tras iniciar sesión."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "¿Dónde se introduce un código promocional?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "El código se ingresa durante el formulario de registro o en la sección de cajero antes de confirmar un depósito."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "¿Qué condiciones se deben revisar antes de solicitar un bono?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Es fundamental revisar el requisito de apuesta (rollover), la vigencia en días, el depósito mínimo exigido y las ganancias máximas retirables."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "¿Existe un bono sin depósito en {{fields.brandName}}?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "{{fields.brandName}} ofrece de forma periódica bonos de regalo al completar el registro y validar el número telefónico por SMS ($500 - $1,000 MXN según la campaña)."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "¿Por qué un código promocional puede no funcionar?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Puede ser por expiración de la campaña, error tipográfico, no cumplir el depósito mínimo o que la oferta esté limitada a usuarios nuevos."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <!-- Identity Schema (Organization & WebSite) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "/#organization",
+        "name": "{{fields.brandName}} Guía México",
+        "url": "/",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "/assets/img/favicon-32x32.png"
+        }
+      },
+      {
+        "@type": "WebSite",
+        "@id": "/#website",
+        "url": "/",
+        "name": "{{fields.brandName}} Guía México",
+        "publisher": {
+          "@id": "/#organization"
+        },
+        "inLanguage": "es-MX"
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="site-logo" aria-label="{{fields.brandName}} México Inicio">
+        <img src="./assets/img/logo.svg" alt="{{fields.brandName}} México Logo" width="140" height="40">
+      </a>
+
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a href="/" class="nav-link">Inicio</a>
+        <a href="/casino" class="nav-link">Casino</a>
+        <a href="/bono" class="nav-link active">Bono</a>
+        <a href="/app" class="nav-link">App</a>
+      </nav>
+
+      <div class="header-actions">
+        <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary">VER PROMOCIONES</a>
+        <button class="mobile-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded="false">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Breadcrumbs -->
+  <div class="breadcrumbs">
+    <div class="container">
+      <ul class="breadcrumb-list">
+        <li class="breadcrumb-item"><a href="/">Inicio</a></li>
+        <li class="breadcrumb-separator">/</li>
+        <li class="breadcrumb-item active">Bono</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container grid-2">
+      <div class="hero-content">
+        <span class="hero-subtitle">Guía de Promociones México</span>
+        <h1>{{fields.brandName}} Bono: guía de promociones y condiciones</h1>
+        <p class="hero-intro">Aprende a analizar y utilizar las promociones de {{fields.brandName}} en México de forma informada. Conoce cómo evaluar los requisitos de rollover, montos mínimos de recarga y reglas antes de solicitar cualquier bono.</p>
+        
+        <div class="hero-cta-group">
+          <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary btn-lg">VER PROMOCIONES</a>
+          <a href="/casino" class="btn btn-outline">CASINO VIRTUAL</a>
+        </div>
+        <p class="affiliate-note">Nota importante: Las promociones pueden cambiar; revisa siempre los términos actuales en el sitio oficial del operador.</p>
+      </div>
+
+      <div class="hero-image-wrapper">
+        <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="hero-image-link" aria-label="Consultar promociones {{fields.brandName}} México">
+          <img src="./assets/img/bono_hero-800.webp" 
+               srcset="./assets/img/bono_hero-400.webp 400w, ./assets/img/bono_hero-800.webp 800w" 
+               sizes="(max-width: 768px) 100vw, 50vw" 
+               width="800" height="450" 
+               alt="Promociones y bonos {{fields.brandName}} México" 
+               loading="eager" fetchpriority="high">
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <main id="main-content">
+
+    <!-- Mandatory Notice Banner -->
+    <div class="container mt-4">
+      <div class="alert-box">
+        <p>📌 <strong>Nota transparente:</strong> <em>Las promociones pueden cambiar; revisa siempre los términos actuales en el sitio oficial de {{fields.brandName}} antes de participar.</em></p>
+      </div>
+    </div>
+
+    <!-- Section 2: Qué es un bono -->
+    <section class="section">
+      <div class="container grid-2">
+        <div class="hero-image-wrapper">
+          <img src="./assets/img/bono_overview-800.webp" 
+               srcset="./assets/img/bono_overview-400.webp 400w, ./assets/img/bono_overview-800.webp 800w" 
+               sizes="(max-width: 768px) 100vw, 50vw" 
+               width="800" height="450" 
+               alt="Tipos de bonos y ofertas de bienvenida" 
+               loading="lazy" decoding="async">
+        </div>
+        <div>
+          <h2>¿Qué es un bono de {{fields.brandName}}?</h2>
+          <p>Un bono es una incentivo promocional otorgado por la plataforma para premiar el registro de nuevos usuarios o la fidelidad de usuarios activos. En {{fields.brandName}} México, las promociones suelen clasificarse en dos vertientes principales:</p>
+          <ul>
+            <li><strong>Bono de Bienvenida por Depósito:</strong> Típicamente equivale al 100% del primer depósito realizado mediante SPEI, OXXO o tarjeta hasta un límite de $3,500 MXN.</li>
+            <li><strong>Bono sin Depósito (Regalo de Registro):</strong> Oferta promocional que otorga un saldo gratuito (entre $500 MXN y $1,000 MXN según la campaña vigente) únicamente por completar la activación de cuenta vía SMS.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Cómo usar un código -->
+    <section class="section section-alt">
+      <div class="container">
+        <div class="section-header">
+          <h2>Cómo activar un bono o código en 4 pasos</h2>
+          <p>Para reclamar una oferta promocional disponible de manera correcta, sigue estos cuatro pasos recomendados:</p>
+        </div>
+
+        <div class="steps-container">
+          <div class="step-card">
+            <div class="step-number">1</div>
+            <h3 class="step-title">Ingresa por el enlace oficial</h3>
+            <p class="step-desc">Abre el sitio oficial de {{fields.brandName}} desde nuestro enlace directo para garantizar que apliquen las ofertas activas.</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">2</div>
+            <h3 class="step-title">Completa tu registro</h3>
+            <p class="step-desc">Crea tu cuenta e ingresa el código promocional en la casilla designada si la oferta lo requiere.</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">3</div>
+            <h3 class="step-title">Verifica tu teléfono SMS</h3>
+            <p class="step-desc">Introduce el PIN de 4 dígitos enviado a tu celular mexicano para liberar bonos de registro sin depósito.</p>
+          </div>
+
+          <div class="step-card">
+            <div class="step-number">4</div>
+            <h3 class="step-title">Realiza tu recarga mínima</h3>
+            <p class="step-desc">Si el bono exige depósito, realiza la recarga necesaria mediante SPEI u OXXO dentro del plazo fijado.</p>
+          </div>
+        </div>
+
+        <div class="text-center mt-4">
+          <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-gold btn-lg">REVISAR PROMOCIONES EN VIVO</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Condiciones que deben revisarse -->
+    <section class="section">
+      <div class="container">
+        <div class="section-header">
+          <h2>Condiciones indispensables que debes revisar</h2>
+          <p>Antes de aceptar cualquier bonificación, es fundamental leer y comprender las reglas asociadas en la letra chiquita:</p>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Término de la Oferta</th>
+                <th>Explicación Práctica</th>
+                <th>Punto de Control Recomendado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Rollover (Requisito de Apuesta)</strong></td>
+                <td>Indica cuántas veces debes apostar el valor del bono (ej. 5x en deportes o 30x en casino) antes de retirar ganancias.</td>
+                <td>Calcula la cantidad total a apostar antes de aceptar.</td>
+              </tr>
+              <tr>
+                <td><strong>Vigencia (Días de Uso)</strong></td>
+                <td>Tiempo límite (usualmente entre 7 y 14 días) para cumplir el rollover completo.</td>
+                <td>Verifica que el periodo sea suficiente según tu ritmo de juego.</td>
+              </tr>
+              <tr>
+                <td><strong>Momio Mínimo Exigido</strong></td>
+                <td>En apuestas deportivas, las cuotas mínimas elegibles suelen ser de -200 (1.50) a +100 (2.00).</td>
+                <td>Apostar a momios inferiores no suma al avance del rollover.</td>
+              </tr>
+              <tr>
+                <td><strong>Límite de Ganancia Máxima</strong></td>
+                <td>Mapeo máximo del bono convertible en saldo retirable en efectivo.</td>
+                <td>Revisa los topes de conversión especificados por la casa.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Bono sin depósito -->
+    <section class="section section-alt">
+      <div class="container grid-2">
+        <div>
+          <h2>Detalles sobre el Bono sin Depósito</h2>
+          <p>El bono gratis de registro es uno de los mayores atractivos de {{fields.brandName}} México. Para reclamarlo adecuadamente sin contratiempos, considera los siguientes aspectos clave:</p>
+          <ul>
+            <li><strong>Requisito de SMS:</strong> El sistema solicita validar tu número móvil +52 de México.</li>
+            <li><strong>Verificación KYC Obligatoria:</strong> Antes de poder procesar cualquier retiro derivado del bono de registro, deberás subir la foto clara de tu credencial INE vigente.</li>
+            <li><strong>Un solo bono por hogar:</strong> Está estrictamente prohibido crear cuentas duplicadas bajo la misma dirección IP o residencia para reclamar múltiples bonos gratis.</li>
+          </ul>
+        </div>
+        <div class="hero-image-wrapper">
+          <img src="./assets/img/bono_no_deposit-800.webp" 
+               srcset="./assets/img/bono_no_deposit-400.webp 400w, ./assets/img/bono_no_deposit-800.webp 800w" 
+               sizes="(max-width: 768px) 100vw, 50vw" 
+               width="800" height="450" 
+               alt="Bono sin depósito {{fields.brandName}} México" 
+               loading="lazy" decoding="async">
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 6: Errores comunes -->
+    <section class="section">
+      <div class="container grid-2">
+        <div class="hero-image-wrapper">
+          <img src="./assets/img/bono_terms-800.webp" 
+               srcset="./assets/img/bono_terms-400.webp 400w, ./assets/img/bono_terms-800.webp 800w" 
+               sizes="(max-width: 768px) 100vw, 50vw" 
+               width="800" height="450" 
+               alt="Revisión de términos y condiciones de bonos" 
+               loading="lazy" decoding="async">
+        </div>
+        <div>
+          <h2>Errores comunes al solicitar un bono</h2>
+          <p>Muchos usuarios encuentran inconvenientes al intentar liberar sus ganancias debido a descuidos habituales:</p>
+          <ul>
+            <li><strong>Solicitar un retiro antes de terminar el rollover:</strong> Esto causa la anulación automática del saldo de bono acumulado.</li>
+            <li><strong>Ingresar códigos caducados:</strong> Las campañas promocionales tienen fechas de cierre estrictas.</li>
+            <li><strong>Usar métodos de depósito no elegibles:</strong> Algunas billeteras electrónicas secundarias pueden estar excluidas de las promociones de primer depósito.</li>
+          </ul>
+          <p>Para aprender más sobre límites de apuestas y control de juego, consulta la guía de <a href="/juego-responsable">Juego Responsable</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 7: FAQs -->
+    <section class="section section-alt">
+      <div class="container">
+        <div class="section-header">
+          <h2>Preguntas frecuentes sobre {{fields.brandName}} Bono</h2>
+          <p>Soluciones a las preguntas más repetidas sobre bonos en México:</p>
+        </div>
+
+        <div class="faq-accordion">
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              <span>¿Cómo sé si mi bono de {{fields.brandName}} sigue activo?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>Puedes verificar el saldo activo y el porcentaje de progreso del rollover en el menú 'Mi Cuenta' pestaña 'Bonos' al estar conectado en la plataforma.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              <span>¿Dónde se ingresa un código promocional de {{fields.brandName}}?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>Se escribe en la casilla 'Código Promocional' dentro del formulario de registro inicial o en la ventana del cajero al recargar.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              <span>¿Qué pasa si no cumplo el rollover en el tiempo límite?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>Si la vigencia expira antes de completar el rollover exigido, los fondos del bono y las ganancias derivadas no retiradas se eliminan de la cuenta.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              <span>¿Se puede combinar el bono de deportes con el bono de casino?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>No, por regla general sólo es posible tener un bono de bienvenida activo a la vez por usuario.</p>
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" aria-expanded="false">
+              <span>¿Puedo retirar las ganancias del bono sin depósito?</span>
+              <span class="faq-icon">+</span>
+            </button>
+            <div class="faq-answer">
+              <p>Sí, siempre que hayas cumplido el rollover especificado, verificado tu número por SMS y completado la validación oficial con tu INE.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="section">
+      <div class="container">
+        <div class="cta-banner">
+          <div class="cta-banner-content">
+            <h2>Revisa las ofertas de {{fields.brandName}} México</h2>
+            <p>Ingresa al sitio oficial de {{fields.brandName}} para consultar las promociones de bienvenida y códigos activos del momento.</p>
+            <a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="btn btn-primary btn-lg">VER PROMOCIONES ACTIVAS</a>
+            <div>
+              <span class="badge-18">🔞 +18 Años | Aplican Términos Oficiales | México</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-col">
+          <a href="/" class="site-logo mb-3" aria-label="{{fields.brandName}} México - Ir a la página de inicio">
+            <img src="./assets/img/logo.svg" alt="{{fields.brandName}} México Logo Footer" width="140" height="40">
+          </a>
+          <p class="text-muted">Análisis independiente e informativo de bonos y promociones de {{fields.brandName}} México. Términos sujetos a cambios por parte del operador.</p>
+        </div>
+
+        <div class="footer-col">
+          <h3>Secciones</h3>
+          <ul class="footer-links">
+            <li><a href="/">Inicio</a></li>
+            <li><a href="/casino">{{fields.brandName}} Casino</a></li>
+            <li><a href="/bono">{{fields.brandName}} Bono</a></li>
+            <li><a href="/app">{{fields.brandName}} App</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h3>Información</h3>
+          <ul class="footer-links">
+            <li><a href="/sobre-nosotros">Sobre nosotros</a></li>
+            <li><a href="/contacto">Contacto</a></li>
+            <li><a href="/juego-responsable">Juego responsable</a></li>
+            <li><a href="/divulgacion-afiliados">Divulgación de afiliados</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h3>Legal</h3>
+          <ul class="footer-links">
+            <li><a href="/politica-privacidad">Política de privacidad</a></li>
+            <li><a href="/terminos-y-condiciones">Términos y condiciones</a></li>
+            <li><a href="https://www.taco3.vip/?pid=2059" target="_blank" rel="sponsored nofollow noopener noreferrer" class="text-gold" aria-label="Ver Ofertas (se abre en una nueva pestaña)">Ver Ofertas ↗</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="responsible-logos">
+          <span class="responsible-badge">SEGOB PERMISO DGJS/DCRCA/P-01/2021</span>
+          <span class="responsible-badge">18+ JUEGA RESPONSABLEMENTE</span>
+        </div>
+        <p>© 2026 {{site.name}} — Guía de bonos {{fields.brandName}} México.</p>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

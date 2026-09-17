@@ -22,6 +22,7 @@ export interface ParsedImage {
   src: string;
   alt?: string | undefined;
   decorative: boolean;
+  nodeId: number;
 }
 
 export interface ParsedPageSEO {
@@ -46,6 +47,11 @@ export interface SeoPatchInput {
   seoTitle?: string | null;
   metaDescription?: string | null;
   h1?: string | null;
+  canonical?: string | null;
+  robots?: string | null;
+  ogTitle?: string | null;
+  ogDescription?: string | null;
+  lang?: string | null;
 }
 
 interface ElementNode {
@@ -81,14 +87,19 @@ export function parsePageSEO(html: string): ParsedPageSEO {
   const ogTitleNodes = findMetaByProperty(document, "og:title");
   const ogDescriptionNodes = findMetaByProperty(document, "og:description");
   const htmlNode = findElements(document, "html")[0];
+  const imageNodeIds: number[] = [];
+  walkElementsWithId(document, (node, id) => {
+    if (node.tagName === "img") imageNodeIds.push(id);
+  });
   const images: ParsedImage[] = $("img")
     .toArray()
-    .map((element) => {
+    .map((element, index) => {
       const item = $(element);
       const alt = item.attr("alt");
       const image: ParsedImage = {
         src: item.attr("src") ?? "",
-        decorative: alt === ""
+        decorative: alt === "",
+        nodeId: imageNodeIds[index] ?? -1
       };
       if (alt !== undefined) image.alt = alt;
       return image;
@@ -152,7 +163,16 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
   const titleNodes = findElements(document, "title");
   const descriptionNodes = findMetaByName(document, "description");
   const h1Nodes = findElements(document, "h1").filter((node) => isInsideBody(node));
+  const canonicalNodes = findLinksByRel(document, "canonical");
+  const robotsNodes = findMetaByName(document, "robots");
+  const ogTitleNodes = findMetaByProperty(document, "og:title");
+  const ogDescriptionNodes = findMetaByProperty(document, "og:description");
+  const htmlNode = findElements(document, "html")[0];
   const headNode = findElements(document, "head")[0];
+
+  if (fields.lang !== undefined) {
+    applySingletonAttribute(ms, html, htmlNode ? [htmlNode] : [], headNode, "html", "lang", fields.lang, patches, '<html lang="">');
+  }
 
   if (fields.seoTitle !== undefined) {
     applySingletonElementText(ms, html, titleNodes, headNode, "title", fields.seoTitle, patches);
@@ -169,6 +189,42 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
       fields.metaDescription,
       patches,
       '<meta name="description" content="">'
+    );
+  }
+
+  if (fields.canonical !== undefined) {
+    applySingletonAttribute(ms, html, canonicalNodes, headNode, "link", "href", fields.canonical, patches, '<link rel="canonical" href="">');
+  }
+
+  if (fields.robots !== undefined) {
+    applySingletonAttribute(ms, html, robotsNodes, headNode, "meta", "content", fields.robots, patches, '<meta name="robots" content="">');
+  }
+
+  if (fields.ogTitle !== undefined) {
+    applySingletonAttribute(
+      ms,
+      html,
+      ogTitleNodes,
+      headNode,
+      "meta",
+      "content",
+      fields.ogTitle,
+      patches,
+      '<meta property="og:title" content="">'
+    );
+  }
+
+  if (fields.ogDescription !== undefined) {
+    applySingletonAttribute(
+      ms,
+      html,
+      ogDescriptionNodes,
+      headNode,
+      "meta",
+      "content",
+      fields.ogDescription,
+      patches,
+      '<meta property="og:description" content="">'
     );
   }
 
@@ -194,6 +250,178 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
   }
 
   return { html: ms.toString(), patches };
+}
+
+/**
+ * Assigns every element a stable index in document order. The same numbering is recomputed
+ * (over a fresh parse) at both annotation time (serving the editable preview) and patch time
+ * (applying a saved edit), so a "node id" round-trips correctly as long as the underlying
+ * document structure hasn't changed between the two — the same assumption CON-05 makes
+ * acceptable for a single-editor session.
+ */
+function walkElementsWithId(root: ElementNode, callback: (node: ElementNode, id: number) => void): void {
+  let counter = 0;
+  visit(root, (node) => {
+    if (node.tagName) {
+      callback(node, counter);
+      counter += 1;
+    }
+  });
+}
+
+/**
+ * Preview-only transform: inserts a `data-igle-node="N"` attribute into every element's start
+ * tag so the editor bridge script can identify elements. Never written to site files — only to
+ * the bytes served by the preview origin (VIS-02).
+ */
+export function annotateNodesForEditing(html: string): string {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  walkElementsWithId(document, (node, id) => {
+    const insertPos = startTagInsertOffset(node);
+    if (insertPos === undefined) return;
+    ms.appendLeft(insertPos, ` data-igle-node="${id}"`);
+  });
+  return ms.toString();
+}
+
+/**
+ * Preview-only transform: neutralizes executable <script> tags (VIS-02) so page behavior
+ * doesn't interfere with editing. Never written to site files.
+ */
+export function neutralizeScripts(html: string): string {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  for (const node of findElements(document, "script")) {
+    const currentType = attr(node, "type");
+    const isExecutable = !currentType || /(java|ecma)script|^module$/i.test(currentType);
+    if (!isExecutable) continue;
+
+    if (currentType) {
+      const range = attrValueRange(node, "type", html);
+      if (range) {
+        ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "type", "igle/inert"));
+        continue;
+      }
+    }
+    const insertPos = startTagInsertOffset(node);
+    if (insertPos !== undefined) ms.appendLeft(insertPos, ` type="igle/inert"`);
+  }
+  return ms.toString();
+}
+
+export interface StructuralPatch {
+  nodeId: number;
+  op: "setInnerHtml" | "setAttr" | "removeAttr" | "removeNode" | "duplicateNode" | "setStyle";
+  attrName?: string;
+  value?: string;
+  /** For op "setStyle": the CSS property to set (e.g. "color", "background-color"). */
+  styleProperty?: string;
+}
+
+/**
+ * Applies one or more edits located by node id (from annotateNodesForEditing / ParsedImage.nodeId)
+ * in a single pass, so a batch of visual-editor changes lands as one minimal set of splices and
+ * one revision. Node ids are resolved by re-walking a fresh parse of the CURRENT file content;
+ * if the element can no longer be found the document changed since the editor loaded it.
+ */
+export function applyStructuralPatches(html: string, patches: StructuralPatch[]): { html: string } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const nodesById = new Map<number, ElementNode>();
+  walkElementsWithId(document, (node, id) => nodesById.set(id, node));
+
+  const ms = new TextPatcher(html);
+  for (const patch of patches) {
+    const target = nodesById.get(patch.nodeId);
+    if (!target) {
+      throw new IgleError(
+        "NODE_NOT_FOUND",
+        "The selected element could not be located — the page may have changed. Reload the editor and try again.",
+        409
+      );
+    }
+
+    if (patch.op === "setInnerHtml") {
+      const range = innerRange(target);
+      if (!range) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be edited this way.", 422);
+      ms.overwrite(range.start, range.end, sanitizeInlineHtml(patch.value ?? ""));
+      continue;
+    }
+
+    if (patch.op === "setAttr") {
+      if (!patch.attrName) throw new IgleError("INVALID_PATCH", "attrName is required for setAttr.", 400);
+      const existing = attrValueRange(target, patch.attrName, html);
+      if (existing) {
+        ms.overwrite(
+          existing.start,
+          existing.end,
+          replaceAttributeValue(html.slice(existing.start, existing.end), patch.attrName, patch.value ?? "")
+        );
+      } else {
+        const insertPos = startTagInsertOffset(target);
+        if (insertPos === undefined) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be edited.", 422);
+        ms.appendLeft(insertPos, ` ${patch.attrName}="${escapeHtmlAttribute(patch.value ?? "")}"`);
+      }
+      continue;
+    }
+
+    if (patch.op === "removeAttr") {
+      if (!patch.attrName) throw new IgleError("INVALID_PATCH", "attrName is required for removeAttr.", 400);
+      const loc = target.sourceCodeLocation?.startTag ?? target.sourceCodeLocation;
+      if (!loc) continue;
+      const tagSource = html.slice(loc.startOffset, loc.endOffset);
+      const match = new RegExp(`\\s${patch.attrName}\\s*=\\s*("[^"]*"|'[^']*')`, "i").exec(tagSource);
+      if (match && match.index !== undefined) {
+        ms.remove(loc.startOffset + match.index, loc.startOffset + match.index + match[0].length);
+      }
+    }
+
+    if (patch.op === "removeNode") {
+      const location = target.sourceCodeLocation;
+      if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be removed.", 422);
+      ms.remove(location.startOffset, location.endOffset);
+      continue;
+    }
+
+    if (patch.op === "duplicateNode") {
+      const location = target.sourceCodeLocation;
+      if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be duplicated.", 422);
+      const outerHtml = html.slice(location.startOffset, location.endOffset);
+      ms.appendLeft(location.endOffset, outerHtml);
+      continue;
+    }
+
+    if (patch.op === "setStyle") {
+      if (!patch.styleProperty) throw new IgleError("INVALID_PATCH", "styleProperty is required for setStyle.", 400);
+      const currentStyle = attr(target, "style") ?? "";
+      const nextStyle = mergeStyleDeclaration(currentStyle, patch.styleProperty, patch.value ?? "");
+      const existing = attrValueRange(target, "style", html);
+      if (existing) {
+        ms.overwrite(existing.start, existing.end, replaceAttributeValue(html.slice(existing.start, existing.end), "style", nextStyle));
+      } else {
+        const insertPos = startTagInsertOffset(target);
+        if (insertPos === undefined) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be styled.", 422);
+        ms.appendLeft(insertPos, ` style="${escapeHtmlAttribute(nextStyle)}"`);
+      }
+      continue;
+    }
+  }
+
+  return { html: ms.toString() };
+}
+
+function startTagInsertOffset(node: ElementNode): number | undefined {
+  const loc = node.sourceCodeLocation?.startTag ?? node.sourceCodeLocation;
+  if (!loc || !node.tagName) return undefined;
+  return loc.startOffset + 1 + node.tagName.length;
+}
+
+/** Minimal safety net for visual-editor text commits: strips executable content, not a full sanitizer. */
+function sanitizeInlineHtml(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
 }
 
 function findElements(root: ElementNode, tagName: string): ElementNode[] {
@@ -394,6 +622,25 @@ function applySingletonAttribute(
   const snippet = `${lineEnding}  ${emptyElement.replace(`${attrName}=""`, `${attrName}="${escapeHtmlAttribute(value)}"`)}`;
   ms.appendLeft(insertion, snippet);
   patches.push({ start: insertion, end: insertion });
+}
+
+/** Sets one property in an inline `style="..."` value, preserving every other declaration already there. */
+function mergeStyleDeclaration(currentStyle: string, property: string, value: string): string {
+  const declarations = new Map<string, string>();
+  for (const part of currentStyle.split(";")) {
+    const colonIndex = part.indexOf(":");
+    if (colonIndex === -1) continue;
+    const name = part.slice(0, colonIndex).trim().toLowerCase();
+    const val = part.slice(colonIndex + 1).trim();
+    if (name) declarations.set(name, val);
+  }
+  const propertyKey = property.trim().toLowerCase();
+  if (value.trim() === "") {
+    declarations.delete(propertyKey);
+  } else {
+    declarations.set(propertyKey, value.trim());
+  }
+  return [...declarations.entries()].map(([name, val]) => `${name}: ${val}`).join("; ");
 }
 
 function replaceAttributeValue(attributeSource: string, attrName: string, value: string): string {

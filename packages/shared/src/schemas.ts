@@ -30,6 +30,9 @@ export const siteMetadataSchema = z.object({
   urlStyle: urlStyleSchema.default("clean"),
   wwwMode: wwwModeSchema.default("non-www"),
   https: z.boolean().default(true),
+  deploymentTarget: z.enum(["local", "aapanel"]).default("local"),
+  /** Which registered ServerRecord this site deploys to when deploymentTarget is "aapanel". */
+  serverId: z.string().optional(),
   status: siteStatusSchema.default("draft"),
   sourceType: sourceTypeSchema,
   templateKey: z.string().optional(),
@@ -80,7 +83,10 @@ export const pageMetadataSchema = z.object({
   primaryKeyword: z.string().optional(),
   inSitemap: z.boolean().default(true),
   fieldStates: pageFieldStatesSchema.default({}),
-  lastWrittenHashes: z.record(z.string()).default({})
+  lastWrittenHashes: z.record(z.string()).default({}),
+  deletedAt: z.string().optional(),
+  trashPath: z.string().optional(),
+  previousInSitemap: z.boolean().optional()
 });
 
 export type PageMetadata = z.infer<typeof pageMetadataSchema>;
