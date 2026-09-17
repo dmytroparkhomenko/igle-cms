@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import Link from "next/link";
+import { PreviewImage } from "../PreviewImage";
+import { resolveAssetRef } from "../../lib/asset-ref";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
 
@@ -22,7 +24,7 @@ export default async function SitesPage({
         const html = await fs.readFile(path.join(site.repoPath, homepage.filePath), "utf8");
         const href = extractFaviconHref(html);
         if (!href) return undefined;
-        return resolveAssetUrl(href, homepage.filePath, previewOrigin, site.slug);
+        return resolveAssetRef(href, homepage.filePath, site.slug);
       } catch {
         return undefined;
       }
@@ -77,8 +79,19 @@ export default async function SitesPage({
             <Link className="card card-link" href={`/sites/${site.id}`} key={site.id}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {favicon ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={favicon} alt="" width={20} height={20} style={{ borderRadius: 4, flexShrink: 0 }} />
+                  favicon.kind === "absolute" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={favicon.url} alt="" width={20} height={20} style={{ borderRadius: 4, flexShrink: 0 }} />
+                  ) : (
+                    <PreviewImage
+                      originFallback={previewOrigin}
+                      path={favicon.path}
+                      alt=""
+                      width={20}
+                      height={20}
+                      style={{ borderRadius: 4, flexShrink: 0 }}
+                    />
+                  )
                 ) : (
                   <span
                     aria-hidden
@@ -123,8 +136,3 @@ function extractFaviconHref(html: string): string | undefined {
   return undefined;
 }
 
-function resolveAssetUrl(src: string, pageFilePath: string, previewOrigin: string, slug: string): string {
-  if (/^(https?:)?\/\//i.test(src) || src.startsWith("data:")) return src;
-  const relative = src.startsWith("/") ? src.slice(1) : path.posix.join(path.posix.dirname(pageFilePath), src);
-  return `${previewOrigin}/${slug}/${relative}`;
-}

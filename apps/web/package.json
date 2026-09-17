@@ -14,12 +14,14 @@
     "@igle/core": "workspace:*",
     "@igle/shared": "workspace:*",
     "next": "^15.5.3",
+    "qrcode": "^1.5.4",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.18.6",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.9.2"

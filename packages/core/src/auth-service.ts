@@ -1,8 +1,44 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
+import * as OTPAuth from "otpauth";
 import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { JsonStateStore, id } from "./state-store.js";
 import type { UserRecord } from "./types.js";
+
+const TOTP_ISSUER = "Igle CMS";
+const PENDING_TWO_FACTOR_TTL_MS = 5 * 60 * 1000;
+const MAX_TWO_FACTOR_ATTEMPTS = 5;
+
+/** The otpauth:// URI for a user's (pending or active) secret — what a QR code needs to encode so an authenticator app can pick it up. */
+export function buildTotpOtpauthUrl(email: string, base32Secret: string): string {
+  return buildTotp(email, base32Secret).toString();
+}
+
+function buildTotp(email: string, base32Secret: string): OTPAuth.TOTP {
+  return new OTPAuth.TOTP({
+    issuer: TOTP_ISSUER,
+    label: email,
+    secret: OTPAuth.Secret.fromBase32(base32Secret),
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30
+  });
+}
+
+/** Accepts a 6-digit code with a small clock-drift window (±30s) either side — the standard tolerance authenticator apps expect a server to allow. */
+function validateTotpCode(base32Secret: string, code: string): boolean {
+  const trimmed = code.trim().replace(/\s+/g, "");
+  if (!/^\d{6}$/.test(trimmed)) return false;
+  const delta = OTPAuth.TOTP.validate({
+    token: trimmed,
+    secret: OTPAuth.Secret.fromBase32(base32Secret),
+    algorithm: "SHA1",
+    digits: 6,
+    period: 30,
+    window: 1
+  });
+  return delta !== null;
+}
 
 export interface TeamMemberSummary {
   id: string;
@@ -173,7 +209,16 @@ export class AuthService {
     return user;
   }
 
-  async createSession(email: string, password: string): Promise<{ sessionId: string; user: UserRecord; requiresTwoFactor: boolean }> {
+  /**
+   * Checks email+password. If the account has 2FA enabled, this deliberately stops short of
+   * creating a real session — the password alone was never meant to be enough — and instead
+   * returns a short-lived pending token the caller can exchange for a session once the correct
+   * code comes back through verifyTwoFactorAndCreateSession.
+   */
+  async createSession(
+    email: string,
+    password: string
+  ): Promise<{ sessionId?: string; pendingTwoFactorToken?: string; requiresTwoFactor: boolean }> {
     const state = await this.stateStore.read();
     const user = state.users.find((item) => item.email.toLowerCase() === email.toLowerCase());
     if (!user) throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
@@ -186,26 +231,109 @@ export class AuthService {
       throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
     }
 
+    user.failedLoginCount = 0;
+    user.failedLoginWindowStartedAt = undefined;
+    state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => new Date(item.expiresAt).getTime() > Date.now());
+
+    if (user.twoFactorEnabled && user.twoFactorSecret) {
+      const token = id("2fa");
+      state.pendingTwoFactor.push({
+        id: token,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + PENDING_TWO_FACTOR_TTL_MS).toISOString(),
+        attempts: 0
+      });
+      await this.stateStore.write(state);
+      return { pendingTwoFactorToken: token, requiresTwoFactor: true };
+    }
+
     const sessionId = id("sess");
     state.sessions.push({
       id: sessionId,
       userId: user.id,
       expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
     });
-    user.failedLoginCount = 0;
-    user.failedLoginWindowStartedAt = undefined;
     await this.stateStore.write(state);
-    return { sessionId, user, requiresTwoFactor: user.requireTwoFactor || user.twoFactorEnabled };
+    return { sessionId, requiresTwoFactor: false };
   }
 
-  async enrollTotp(userId: string, secret = randomBytes(20).toString("base64url")): Promise<{ secret: string }> {
-    await this.stateStore.update((state) => {
-      const user = state.users.find((item) => item.id === userId);
-      if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
-      user.twoFactorSecret = secret;
-      user.twoFactorEnabled = true;
+  /** The second step of a 2FA login: exchanges a valid pending token + correct code for a real session. Wrong codes count against a per-token attempt limit rather than the account-wide login lockout, since the password already checked out. */
+  async verifyTwoFactorAndCreateSession(pendingToken: string, code: string): Promise<{ sessionId: string }> {
+    const state = await this.stateStore.read();
+    const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
+    if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
+    }
+    const user = state.users.find((item) => item.id === pending.userId);
+    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
+    }
+    if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429);
+    }
+
+    if (!validateTotpCode(user.twoFactorSecret, code)) {
+      pending.attempts += 1;
+      await this.stateStore.write(state);
+      throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
+    }
+
+    state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+    const sessionId = id("sess");
+    state.sessions.push({
+      id: sessionId,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
     });
-    return { secret };
+    await this.stateStore.write(state);
+    return { sessionId };
+  }
+
+  /** Starts (or restarts) 2FA setup for the actor's own account. The secret is stored right away but 2FA doesn't actually turn on until confirmTotpEnrollment verifies a real code from it — otherwise a typo while scanning the QR code could lock the account out. */
+  async beginTotpEnrollment(actor: Actor): Promise<{ secret: string; otpauthUrl: string }> {
+    const secret = new OTPAuth.Secret({ size: 20 });
+    await this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === actor.id);
+      if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+      user.twoFactorSecret = secret.base32;
+      user.twoFactorEnabled = false;
+    });
+    return { secret: secret.base32, otpauthUrl: buildTotp(actor.email, secret.base32).toString() };
+  }
+
+  /** Confirms setup with a real code from the authenticator app — this is the moment 2FA actually turns on. */
+  async confirmTotpEnrollment(actor: Actor, code: string): Promise<void> {
+    const state = await this.stateStore.read();
+    const user = state.users.find((item) => item.id === actor.id);
+    if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+    if (!user.twoFactorSecret) throw new IgleError("TWO_FACTOR_NOT_STARTED", "Start two-factor setup first.", 400);
+    if (!validateTotpCode(user.twoFactorSecret, code)) throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
+    await this.stateStore.update((current) => {
+      const record = current.users.find((item) => item.id === actor.id);
+      if (record) record.twoFactorEnabled = true;
+    });
+  }
+
+  /** Turns 2FA off for the actor's own account. Requires a currently-valid code (not just an active session) so a momentarily-unlocked device can't silently strip the protection back off. */
+  async disableTotp(actor: Actor, code: string): Promise<void> {
+    const state = await this.stateStore.read();
+    const user = state.users.find((item) => item.id === actor.id);
+    if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) return;
+    if (!validateTotpCode(user.twoFactorSecret, code)) throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
+    await this.stateStore.update((current) => {
+      const record = current.users.find((item) => item.id === actor.id);
+      if (record) {
+        record.twoFactorEnabled = false;
+        record.twoFactorSecret = undefined;
+      }
+    });
   }
 
   private async createUserRecord(email: string, password: string, name: string, role: "administrator" | "editor"): Promise<UserRecord> {

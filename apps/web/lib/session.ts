@@ -4,7 +4,9 @@ import { IgleError, type Actor } from "@igle/shared";
 import { runtime } from "./runtime";
 
 export const SESSION_COOKIE = "igle_session";
+export const PENDING_TWO_FACTOR_COOKIE = "igle_2fa_pending";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const PENDING_TWO_FACTOR_TTL_MS = 5 * 60 * 1000;
 
 export async function getCurrentActor(): Promise<Actor | undefined> {
   const store = await cookies();
@@ -48,18 +50,20 @@ export function resolveRequestOrigin(request: Request): string {
   return `${protocol}://${host}`;
 }
 
-export async function createSessionCookie(sessionId: string, request: Request): Promise<void> {
-  // NODE_ENV is "production" under `next start` regardless of whether this request actually
-  // arrived over HTTPS — a Secure cookie set for a plain-HTTP request is silently dropped by
-  // real browsers (unlike curl), so this checks the request's actual scheme instead: the
-  // reverse proxy's forwarded-proto header if there is one, else the request's own URL.
+// NODE_ENV is "production" under `next start` regardless of whether this request actually
+// arrived over HTTPS — a Secure cookie set for a plain-HTTP request is silently dropped by real
+// browsers (unlike curl), so this checks the request's actual scheme instead: the reverse
+// proxy's forwarded-proto header if there is one, else the request's own URL.
+function isHttpsRequest(request: Request): boolean {
   const forwardedProto = request.headers.get("x-forwarded-proto");
-  const isHttps = forwardedProto ? forwardedProto.split(",")[0]?.trim() === "https" : new URL(request.url).protocol === "https:";
+  return forwardedProto ? forwardedProto.split(",")[0]?.trim() === "https" : new URL(request.url).protocol === "https:";
+}
 
+export async function createSessionCookie(sessionId: string, request: Request): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE, sessionId, {
     httpOnly: true,
-    secure: isHttps,
+    secure: isHttpsRequest(request),
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_MS / 1000
@@ -69,4 +73,26 @@ export async function createSessionCookie(sessionId: string, request: Request): 
 export async function clearSessionCookie(): Promise<void> {
   const store = await cookies();
   store.delete(SESSION_COOKIE);
+}
+
+/** Holds the pending-2FA token between the password step and the code step — never the session cookie itself, so it can't be mistaken for a real login. */
+export async function createPendingTwoFactorCookie(token: string, request: Request): Promise<void> {
+  const store = await cookies();
+  store.set(PENDING_TWO_FACTOR_COOKIE, token, {
+    httpOnly: true,
+    secure: isHttpsRequest(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: PENDING_TWO_FACTOR_TTL_MS / 1000
+  });
+}
+
+export async function getPendingTwoFactorToken(): Promise<string | undefined> {
+  const store = await cookies();
+  return store.get(PENDING_TWO_FACTOR_COOKIE)?.value;
+}
+
+export async function clearPendingTwoFactorCookie(): Promise<void> {
+  const store = await cookies();
+  store.delete(PENDING_TWO_FACTOR_COOKIE);
 }

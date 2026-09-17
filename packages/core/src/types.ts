@@ -93,6 +93,8 @@ export interface CoreState {
   tickets: TicketRecord[];
   deployments: DeploymentRecord[];
   servers: ServerRecord[];
+  /** Bridges the password step and the code step of a two-factor login — created once the password checks out, consumed (or expired) before a real session ever exists. */
+  pendingTwoFactor: PendingTwoFactorRecord[];
   /** The one shared login password every registered team member's account is hashed against. */
   teamPasswordHash?: string | undefined;
   teamPasswordUpdatedAt?: string | undefined;
@@ -144,6 +146,14 @@ export interface SessionRecord {
   userId: string;
   expiresAt: string;
   revokedAt?: string | undefined;
+}
+
+/** A password check that passed but is waiting on a TOTP code — the token IS the id, so knowing it is what "possession" means here. Single-use and short-lived; never upgraded to a session directly. */
+export interface PendingTwoFactorRecord {
+  id: string;
+  userId: string;
+  expiresAt: string;
+  attempts: number;
 }
 
 export interface DraftRecord {

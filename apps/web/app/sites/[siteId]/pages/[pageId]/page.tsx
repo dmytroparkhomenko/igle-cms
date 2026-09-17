@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { parsePageSEO } from "@igle/html-engine";
 import { effectiveSiteLanguageTag, resolveInside } from "@igle/shared";
+import { resolveAssetRef } from "../../../../../lib/asset-ref";
 import { runtime } from "../../../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../../../lib/session";
+import { PreviewImage } from "../../../../PreviewImage";
 import { PreviewLink } from "../../../../PreviewLink";
 
 export default async function PageEditor({
@@ -223,8 +224,15 @@ export default async function PageEditor({
         {parsed.images.map((image, index) => (
           <details key={`${image.src}-${index}`} style={{ borderBottom: "1px solid var(--line)" }}>
             <summary className="list-row" style={{ cursor: "pointer", borderBottom: "none", listStyle: "none" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img className="thumb" src={resolveAssetUrl(image.src, page.filePath, previewOrigin, site.slug)} alt="" loading="lazy" />
+              {(() => {
+                const ref = resolveAssetRef(image.src, page.filePath, site.slug);
+                return ref.kind === "absolute" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="thumb" src={ref.url} alt="" loading="lazy" />
+                ) : (
+                  <PreviewImage className="thumb" originFallback={previewOrigin} path={ref.path} alt="" loading="lazy" />
+                );
+              })()}
               <div className="main">
                 <p className="muted" style={{ margin: 0, wordBreak: "break-all" }}>{image.src}</p>
               </div>
@@ -277,12 +285,6 @@ function FieldMeta({ state, length, min, max }: { state: string; length: number;
       <StateBadge state={state} />
     </span>
   );
-}
-
-function resolveAssetUrl(src: string, pageFilePath: string, previewOrigin: string, slug: string): string {
-  if (/^(https?:)?\/\//i.test(src) || src.startsWith("data:")) return src;
-  const relative = src.startsWith("/") ? src.slice(1) : path.posix.join(path.posix.dirname(pageFilePath), src);
-  return `${previewOrigin}/${slug}/${relative}`;
 }
 
 function StateBadge({ state }: { state: string }) {
