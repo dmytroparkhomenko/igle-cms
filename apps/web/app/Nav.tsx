@@ -18,7 +18,7 @@ const links = [
   { href: "/settings", label: "Settings" }
 ];
 
-const adminOnly = new Set(["/team", "/servers", "/domains", "/cloudflare-accounts"]);
+const adminOnly = new Set(["/team", "/servers", "/domains", "/cloudflare-accounts", "/integrations"]);
 
 export function Nav({ showTeam }: { showTeam: boolean }) {
   const pathname = usePathname();

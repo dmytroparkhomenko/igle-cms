@@ -346,11 +346,10 @@ export class SiteService {
     });
   }
 
-  async list(actor: Actor): Promise<SiteRecord[]> {
+  /** Every site — editors see the same full list as administrators (see permissions.ts for why there's no per-site filtering). */
+  async list(_actor: Actor): Promise<SiteRecord[]> {
     const state = await this.stateStore.read();
-    if (actor.role === "administrator") return state.sites;
-    const visible = new Set(actor.siteGrants?.map((grant) => grant.siteId) ?? []);
-    return state.sites.filter((site) => visible.has(site.id));
+    return state.sites;
   }
 
   async get(siteIdOrSlug: string, actor: Actor): Promise<SiteRecord | undefined> {

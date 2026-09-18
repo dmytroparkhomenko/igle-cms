@@ -44,7 +44,7 @@ export class ScriptService {
   }
 
   async addScript(site: SiteRecord, input: ScriptInput, actor: Actor): Promise<{ revisionNumber: number; scriptId: string }> {
-    assertCan(actor, "integrations.configure", site.id);
+    assertCan(actor, "sites.integrations", site.id);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const hash = scriptHash(input.code);
@@ -81,7 +81,7 @@ export class ScriptService {
   }
 
   async setEnabled(site: SiteRecord, scriptId: string, enabled: boolean, actor: Actor): Promise<{ revisionNumber: number }> {
-    assertCan(actor, "integrations.configure", site.id);
+    assertCan(actor, "sites.integrations", site.id);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const script = metadata.scripts.find((item) => item.id === scriptId);
@@ -98,7 +98,7 @@ export class ScriptService {
   }
 
   async deleteScript(site: SiteRecord, scriptId: string, actor: Actor): Promise<{ revisionNumber: number }> {
-    assertCan(actor, "integrations.configure", site.id);
+    assertCan(actor, "sites.integrations", site.id);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const script = metadata.scripts.find((item) => item.id === scriptId);

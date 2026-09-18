@@ -25,7 +25,7 @@ export class RedirectService {
   }
 
   async addRedirect(site: SiteRecord, input: RedirectInput, actor: Actor): Promise<{ revisionNumber: number; redirectId: string }> {
-    assertCan(actor, "integrations.configure", site.id);
+    assertCan(actor, "sites.integrations", site.id);
     validateRedirect(input);
     const filePath = path.join(site.repoPath, ".igle", "redirects.json");
     const metadata = redirectsMetadataSchema.parse(await readJson(filePath).catch(() => ({ redirects: [] })));
@@ -42,7 +42,7 @@ export class RedirectService {
   }
 
   async deleteRedirect(site: SiteRecord, redirectId: string, actor: Actor): Promise<{ revisionNumber: number }> {
-    assertCan(actor, "integrations.configure", site.id);
+    assertCan(actor, "sites.integrations", site.id);
     const filePath = path.join(site.repoPath, ".igle", "redirects.json");
     const metadata = redirectsMetadataSchema.parse(await readJson(filePath).catch(() => ({ redirects: [] })));
     const existing = metadata.redirects.find((redirect) => redirect.id === redirectId);

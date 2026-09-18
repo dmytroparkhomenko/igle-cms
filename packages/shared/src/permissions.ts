@@ -13,6 +13,7 @@ export const capabilities = [
   "sites.code",
   "sites.preview",
   "sites.deploy",
+  "sites.integrations",
   "servers.manage",
   "domains.manage",
   "ai.configure",
@@ -23,51 +24,45 @@ export const capabilities = [
 
 export type Capability = (typeof capabilities)[number];
 
-export interface SiteGrant {
-  siteId: string;
-  canEditCode: boolean;
-  canDeploy: boolean;
-}
-
 export interface Actor {
   id: string;
   email: string;
   role: Role;
-  siteGrants?: SiteGrant[];
   /** Independent of role — gates deploying/moving a site onto a server flagged `restricted`. */
   canDeployRestricted?: boolean;
 }
 
 const adminCapabilities = new Set<Capability>(capabilities);
 
-const editorBaseCapabilities = new Set<Capability>([
+/**
+ * An editor gets every site-level feature on every site — there's no per-site grant system (one
+ * existed in the types before this, but nothing ever populated it, so every editor silently saw
+ * zero sites; removed rather than wired up, since the actual requirement is flat access). The
+ * only two restrictions an editor has: deploying to a server flagged `restricted` (gated
+ * separately by canDeployRestricted, checked directly where a deploy target is resolved — not a
+ * capability), and the tool-wide management surfaces below that aren't in this set at all
+ * (Team, Servers, Domains/Cloudflare, template library management, global integrations).
+ */
+const editorCapabilities = new Set<Capability>([
+  "sites.create",
+  "sites.delete",
   "sites.read",
   "sites.edit",
+  "sites.code",
   "sites.preview",
+  "sites.deploy",
+  "sites.integrations",
   "ai.use",
   "revisions.restore"
 ]);
 
-export function can(actor: Actor, capability: Capability, siteId?: string): boolean {
+export function can(actor: Actor, capability: Capability): boolean {
   if (actor.role === "administrator") return adminCapabilities.has(capability);
-
-  if (!editorBaseCapabilities.has(capability) && capability !== "sites.code" && capability !== "sites.deploy") {
-    return false;
-  }
-
-  if (!siteId) return editorBaseCapabilities.has(capability);
-
-  const grant = actor.siteGrants?.find((item) => item.siteId === siteId);
-  if (!grant) return false;
-
-  if (capability === "sites.code") return grant.canEditCode;
-  if (capability === "sites.deploy") return grant.canDeploy;
-
-  return editorBaseCapabilities.has(capability);
+  return editorCapabilities.has(capability);
 }
 
 export function assertCan(actor: Actor, capability: Capability, siteId?: string): void {
-  if (!can(actor, capability, siteId)) {
+  if (!can(actor, capability)) {
     throw new IgleError("FORBIDDEN", "You do not have permission to perform this action.", 403, {
       capability,
       siteId
