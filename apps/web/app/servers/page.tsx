@@ -105,35 +105,77 @@ export default async function ServersPage({
       <h2>Registered servers ({servers.length})</h2>
       <div className="list">
         {servers.map((server) => (
-          <div key={server.id} className="list-row">
-            <div className="main">
-              <h3>
-                {server.name} {server.restricted ? <span className="status" style={{ marginLeft: 6, color: "var(--warn)", borderColor: "var(--warn)" }}>Restricted</span> : null}
-              </h3>
-              <p className="muted">
-                {server.baseUrl} · key {server.apiKeyPreview} · {server.siteCount} site{server.siteCount === 1 ? "" : "s"}
-                {server.publicIp ? ` · DNS target ${server.publicIp}` : " · no public IP set for DNS"}
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <form method="post" action="/api/settings/aapanel/test">
-                <input type="hidden" name="serverId" value={server.id} />
-                <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>
-                  Test connection
-                </button>
-              </form>
-              {server.siteCount === 0 ? (
-                <form method="post" action={`/api/servers/${server.id}/delete`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
-                    Remove
+          <div key={server.id} className="list-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="main">
+                <h3>
+                  {server.name} {server.restricted ? <span className="status" style={{ marginLeft: 6, color: "var(--warn)", borderColor: "var(--warn)" }}>Restricted</span> : null}
+                </h3>
+                <p className="muted">
+                  {server.baseUrl} · key {server.apiKeyPreview} · {server.siteCount} site{server.siteCount === 1 ? "" : "s"}
+                  {server.publicIp ? ` · DNS target ${server.publicIp}` : " · no public IP set for DNS"}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                <form method="post" action="/api/settings/aapanel/test">
+                  <input type="hidden" name="serverId" value={server.id} />
+                  <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>
+                    Test connection
                   </button>
                 </form>
-              ) : (
-                <span className="muted" style={{ fontSize: 12 }}>
-                  Move its sites off first to remove
-                </span>
-              )}
+                {server.siteCount === 0 ? (
+                  <form method="post" action={`/api/servers/${server.id}/delete`}>
+                    <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                      Remove
+                    </button>
+                  </form>
+                ) : (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    Move its sites off first to remove
+                  </span>
+                )}
+              </div>
             </div>
+            <details>
+              <summary style={{ cursor: "pointer", fontSize: 12.5, color: "var(--accent)" }}>Edit</summary>
+              <form method="post" action={`/api/servers/${server.id}`} style={{ display: "grid", gap: 10, marginTop: 12, maxWidth: 420 }}>
+                <div className="field">
+                  <label htmlFor={`name-${server.id}`}>Name</label>
+                  <input type="text" id={`name-${server.id}`} name="name" defaultValue={server.name} required />
+                </div>
+                <div className="field">
+                  <label htmlFor={`baseUrl-${server.id}`}>aaPanel base URL</label>
+                  <input type="text" id={`baseUrl-${server.id}`} name="baseUrl" defaultValue={server.baseUrl} required />
+                </div>
+                <div className="field">
+                  <label htmlFor={`apiKey-${server.id}`}>API key</label>
+                  <input
+                    type="password"
+                    id={`apiKey-${server.id}`}
+                    name="apiKey"
+                    autoComplete="off"
+                    placeholder={`Leave blank to keep the current key (${server.apiKeyPreview})`}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor={`publicIp-${server.id}`}>Public IP (for DNS)</label>
+                  <input
+                    type="text"
+                    id={`publicIp-${server.id}`}
+                    name="publicIp"
+                    defaultValue={server.publicIp ?? ""}
+                    placeholder="e.g. 203.0.113.5"
+                  />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="checkbox" name="restricted" defaultChecked={server.restricted} />
+                  Restricted — only administrators granted access can deploy here
+                </label>
+                <button className="button" type="submit" style={{ justifySelf: "start" }}>
+                  Save changes
+                </button>
+              </form>
+            </details>
           </div>
         ))}
         {servers.length === 0 ? (

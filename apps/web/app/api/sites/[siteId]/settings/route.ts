@@ -19,7 +19,8 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
 
     const settings: UpdateSiteSettingsInput = {
       name: String(form.get("name") ?? ""),
-      domain: String(form.get("domain") ?? ""),
+      // Domain is deliberately not settable here — every domain must go through Cloudflare
+      // (see DomainService.assignToSite), so this form no longer has a domain field at all.
       https: form.get("https") === "on"
     };
     if (urlStyle === "html-ext" || urlStyle === "clean" || urlStyle === "clean-slash") settings.urlStyle = urlStyle;

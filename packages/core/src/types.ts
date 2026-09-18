@@ -224,6 +224,8 @@ export type TicketStatus = "open" | "in-progress" | "done" | "cancelled";
 export interface TicketComment {
   id: string;
   author: string;
+  /** The commenter's real account — author is a display name resolved from this at write time, so comments still read fine even if the account is later renamed or removed. */
+  authorId?: string | undefined;
   body: string;
   createdAt: string;
 }
@@ -237,6 +239,8 @@ export interface TicketRecord {
   priority: TicketPriority;
   status: TicketStatus;
   deadline?: string | undefined;
+  /** The team member (UserRecord.id) this ticket belongs to — unset means unassigned. */
+  assigneeId?: string | undefined;
   comments: TicketComment[];
   createdAt: string;
   updatedAt: string;

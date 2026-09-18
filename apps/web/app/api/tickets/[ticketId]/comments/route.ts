@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
-import { resolveRequestOrigin } from "../../../../../lib/session";
+import { requireActor, resolveRequestOrigin } from "../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ ticketId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -9,11 +9,11 @@ export async function POST(request: Request, context: { params: Promise<{ ticket
   const { ticketId } = await context.params;
 
   try {
+    const actor = await requireActor();
     const form = await request.formData();
-    const author = String(form.get("author") ?? "");
     const body = String(form.get("body") ?? "");
 
-    await runtime.ticketService.addComment(ticketId, author, body);
+    await runtime.ticketService.addComment(ticketId, actor, body);
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL(`/tickets/${ticketId}?commented=1`, resolveRequestOrigin(request)), { status: 303 });

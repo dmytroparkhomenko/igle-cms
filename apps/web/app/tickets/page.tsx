@@ -28,17 +28,36 @@ const statusLabel: Record<string, string> = {
 export default async function TicketsPage({
   searchParams
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; assignee?: string }>;
 }) {
-  const { error } = await searchParams;
-  const [tickets, sites] = await Promise.all([runtime.ticketService.list(), runtime.siteService.list((await requireActorOrRedirect()))]);
+  const actor = await requireActorOrRedirect();
+  const { error, assignee } = await searchParams;
+  const [tickets, sites, members] = await Promise.all([
+    runtime.ticketService.list(),
+    runtime.siteService.list(actor),
+    runtime.authService.listSelectable(actor)
+  ]);
   const sitesById = new Map(sites.map((site) => [site.id, site.metadata.name]));
+  const membersById = new Map(members.map((member) => [member.id, member]));
 
-  const sorted = tickets
-    .slice()
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const assigneeFilter = assignee ?? "all";
+  const filtered = tickets.filter((ticket) => {
+    if (assigneeFilter === "all") return true;
+    if (assigneeFilter === "unassigned") return !ticket.assigneeId;
+    if (assigneeFilter === "mine") return ticket.assigneeId === actor.id;
+    return ticket.assigneeId === assigneeFilter;
+  });
+
+  const sorted = filtered.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const openTickets = sorted.filter((ticket) => ticket.status !== "done" && ticket.status !== "cancelled");
   const closedTickets = sorted.filter((ticket) => ticket.status === "done" || ticket.status === "cancelled");
+
+  const chips: Array<{ value: string; label: string }> = [
+    { value: "all", label: "All" },
+    { value: "mine", label: "Mine" },
+    ...members.map((member) => ({ value: member.id, label: member.name || member.email })),
+    { value: "unassigned", label: "Unassigned" }
+  ];
 
   return (
     <>
@@ -54,6 +73,22 @@ export default async function TicketsPage({
           {error}
         </article>
       ) : null}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+        {chips.map((chip) => {
+          const active = assigneeFilter === chip.value;
+          return (
+            <Link
+              key={chip.value}
+              href={chip.value === "all" ? "/tickets" : `/tickets?assignee=${chip.value}`}
+              className="status"
+              style={active ? { background: "var(--accent)", color: "#fff", borderColor: "var(--accent)" } : undefined}
+            >
+              {chip.label}
+            </Link>
+          );
+        })}
+      </div>
 
       <form
         className="card"
@@ -74,8 +109,21 @@ export default async function TicketsPage({
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
-            <label className="muted" htmlFor="specialistType">
+            <label className="muted" htmlFor="assigneeId">
               Assign to
+            </label>
+            <select id="assigneeId" name="assigneeId" defaultValue={actor.id}>
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name || member.email}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="muted" htmlFor="specialistType">
+              Category
             </label>
             <select id="specialistType" name="specialistType" required>
               <option value="developer">Developer</option>
@@ -84,6 +132,9 @@ export default async function TicketsPage({
               <option value="copywriter">Copywriter</option>
             </select>
           </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
             <label className="muted" htmlFor="priority">
               Priority
@@ -95,22 +146,6 @@ export default async function TicketsPage({
               <option value="urgent">Urgent</option>
             </select>
           </div>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <label className="muted" htmlFor="siteId">
-              Site (optional)
-            </label>
-            <select id="siteId" name="siteId">
-              <option value="">No specific site</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.metadata.name}
-                </option>
-              ))}
-            </select>
-          </div>
           <div>
             <label className="muted" htmlFor="deadline">
               Deadline (optional)
@@ -119,6 +154,18 @@ export default async function TicketsPage({
           </div>
         </div>
 
+        <label className="muted" htmlFor="siteId">
+          Site (optional)
+        </label>
+        <select id="siteId" name="siteId">
+          <option value="">No specific site</option>
+          {sites.map((site) => (
+            <option key={site.id} value={site.id}>
+              {site.metadata.name}
+            </option>
+          ))}
+        </select>
+
         <button className="button" type="submit" style={{ justifySelf: "start", marginTop: 6 }}>
           Create ticket
         </button>
@@ -126,22 +173,28 @@ export default async function TicketsPage({
 
       <h2>Open ({openTickets.length})</h2>
       <div className="list" style={{ marginBottom: 28 }}>
-        {openTickets.map((ticket) => (
-          <Link className="list-row" href={`/tickets/${ticket.id}`} key={ticket.id}>
-            <div className="main">
-              <h3>{ticket.title}</h3>
-              <p className="muted">
-                {specialistLabel[ticket.specialistType]}
-                {ticket.siteId && sitesById.has(ticket.siteId) ? ` · ${sitesById.get(ticket.siteId)}` : ""}
-                {ticket.deadline ? ` · Due ${ticket.deadline}` : ""}
-              </p>
-            </div>
-            <span className="status" style={{ color: priorityColor[ticket.priority], borderColor: priorityColor[ticket.priority] }}>
-              {ticket.priority}
-            </span>
-            <span className="status">{statusLabel[ticket.status]}</span>
-          </Link>
-        ))}
+        {openTickets.map((ticket) => {
+          const assignee = ticket.assigneeId ? membersById.get(ticket.assigneeId) : undefined;
+          return (
+            <Link className="list-row" href={`/tickets/${ticket.id}`} key={ticket.id}>
+              <div className="main">
+                <h3>{ticket.title}</h3>
+                <p className="muted">
+                  {specialistLabel[ticket.specialistType]}
+                  {ticket.siteId && sitesById.has(ticket.siteId) ? ` · ${sitesById.get(ticket.siteId)}` : ""}
+                  {ticket.deadline ? ` · Due ${ticket.deadline}` : ""}
+                </p>
+              </div>
+              <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
+                {assignee ? assignee.name || assignee.email : "Unassigned"}
+              </span>
+              <span className="status" style={{ color: priorityColor[ticket.priority], borderColor: priorityColor[ticket.priority] }}>
+                {ticket.priority}
+              </span>
+              <span className="status">{statusLabel[ticket.status]}</span>
+            </Link>
+          );
+        })}
         {openTickets.length === 0 ? (
           <div className="list-row">
             <div className="main">
@@ -158,18 +211,24 @@ export default async function TicketsPage({
             Closed ({closedTickets.length})
           </summary>
           <div className="list" style={{ marginBottom: 28 }}>
-            {closedTickets.map((ticket) => (
-              <Link className="list-row" href={`/tickets/${ticket.id}`} key={ticket.id}>
-                <div className="main">
-                  <h3>{ticket.title}</h3>
-                  <p className="muted">
-                    {specialistLabel[ticket.specialistType]}
-                    {ticket.siteId && sitesById.has(ticket.siteId) ? ` · ${sitesById.get(ticket.siteId)}` : ""}
-                  </p>
-                </div>
-                <span className="status">{statusLabel[ticket.status]}</span>
-              </Link>
-            ))}
+            {closedTickets.map((ticket) => {
+              const assignee = ticket.assigneeId ? membersById.get(ticket.assigneeId) : undefined;
+              return (
+                <Link className="list-row" href={`/tickets/${ticket.id}`} key={ticket.id}>
+                  <div className="main">
+                    <h3>{ticket.title}</h3>
+                    <p className="muted">
+                      {specialistLabel[ticket.specialistType]}
+                      {ticket.siteId && sitesById.has(ticket.siteId) ? ` · ${sitesById.get(ticket.siteId)}` : ""}
+                    </p>
+                  </div>
+                  <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
+                    {assignee ? assignee.name || assignee.email : "Unassigned"}
+                  </span>
+                  <span className="status">{statusLabel[ticket.status]}</span>
+                </Link>
+              );
+            })}
           </div>
         </details>
       ) : null}

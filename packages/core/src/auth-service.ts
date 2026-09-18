@@ -104,6 +104,12 @@ export class AuthService {
     });
   }
 
+  /** Every team member's id/name/email, no admin gate — for pickers like a ticket's assignee, where any signed-in member needs to see who's on the team, not just administrators. */
+  async listSelectable(_actor: Actor): Promise<Array<{ id: string; name: string; email: string }>> {
+    const state = await this.stateStore.read();
+    return state.users.map((user) => ({ id: user.id, name: user.name, email: user.email })).sort((a, b) => a.email.localeCompare(b.email));
+  }
+
   async listTeamMembers(actor: Actor): Promise<TeamMemberSummary[]> {
     assertCan(actor, "users.manage");
     const state = await this.stateStore.read();
@@ -163,6 +169,9 @@ export class AuthService {
     await this.stateStore.update((state) => {
       state.users = state.users.filter((user) => user.id !== userId);
       state.sessions = state.sessions.filter((session) => session.userId !== userId);
+      for (const ticket of state.tickets) {
+        if (ticket.assigneeId === userId) ticket.assigneeId = undefined;
+      }
     });
   }
 

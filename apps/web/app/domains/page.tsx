@@ -1,29 +1,16 @@
 import Link from "next/link";
 import { IgleError } from "@igle/shared";
+import { domainStatusColor, domainStatusLabel } from "../../lib/domain-status";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
-
-const statusLabel: Record<string, string> = {
-  pending_nameservers: "Waiting on nameservers",
-  dns_configured: "DNS live (SSL: full)",
-  ssl_active: "Fully connected (SSL: strict)",
-  error: "Error"
-};
-
-const statusColor: Record<string, string> = {
-  pending_nameservers: "var(--muted)",
-  dns_configured: "var(--accent)",
-  ssl_active: "var(--accent)",
-  error: "var(--warn)"
-};
 
 export default async function DomainsPage({
   searchParams
 }: {
-  searchParams: Promise<{ error?: string; connected?: string; removed?: string; assigned?: string }>;
+  searchParams: Promise<{ error?: string; connected?: string; removed?: string; assigned?: string; connect?: string }>;
 }) {
   const actor = await requireActorOrRedirect();
-  const { error, connected, removed, assigned } = await searchParams;
+  const { error, connected, removed, assigned, connect } = await searchParams;
 
   let domains: Awaited<ReturnType<typeof runtime.domainService.list>> = [];
   let forbidden = false;
@@ -87,6 +74,12 @@ export default async function DomainsPage({
           Assigned to <strong>{assigned}</strong>.
         </article>
       ) : null}
+      {connect ? (
+        <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16, maxWidth: 640 }}>
+          Connecting <strong>{connect}</strong> through Cloudflare — once it&apos;s live, assign it to the site below to
+          replace the direct-to-server domain.
+        </article>
+      ) : null}
 
       <div className="settings-card" style={{ marginBottom: 28, maxWidth: 560 }}>
         <div className="settings-card-header">
@@ -108,7 +101,7 @@ export default async function DomainsPage({
           <form method="post" action="/api/domains" style={{ display: "grid", gap: 10 }}>
             <div className="field">
               <label htmlFor="domain">Domain</label>
-              <input type="text" id="domain" name="domain" placeholder="example.com" required />
+              <input type="text" id="domain" name="domain" defaultValue={connect ?? ""} placeholder="example.com" required />
             </div>
             <div className="field">
               <label htmlFor="cloudflareAccountId">Cloudflare account</label>
@@ -146,8 +139,8 @@ export default async function DomainsPage({
               <div className="main">
                 <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {domain.domain}
-                  <span className="badge" style={{ background: statusColor[domain.status], color: "#fff" }}>
-                    {statusLabel[domain.status] ?? domain.status}
+                  <span className="badge" style={{ background: domainStatusColor[domain.status], color: "#fff" }}>
+                    {domainStatusLabel[domain.status] ?? domain.status}
                   </span>
                 </h3>
                 <p className="muted" style={{ margin: 0 }}>

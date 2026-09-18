@@ -5,10 +5,10 @@ import { notFound } from "next/navigation";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
 import { resolveAssetRef } from "../../../lib/asset-ref";
+import { domainStatusColor, domainStatusLabel } from "../../../lib/domain-status";
 import { extractFaviconHref } from "../../../lib/favicon";
 import { ApplyLanguageButton } from "./ApplyLanguageButton";
 import { DeployButton } from "./DeployButton";
-import { DomainPicker } from "./DomainPicker";
 import { FixLinksButton } from "./FixLinksButton";
 import { PageRow } from "./PageRow";
 import { PreviewImage } from "../../PreviewImage";
@@ -135,11 +135,10 @@ export default async function SiteDetailPage({
             })),
         ])
       : [null, null];
-  const aapanelDomainOptions = assignedServerId
-    ? await runtime.deployService
-        .listAaPanelSites(assignedServerId, actor)
-        .catch(() => [])
-    : [];
+  // Every domain must go through Cloudflare (no direct-to-server DNS — that's what leaks the
+  // origin IP). This is the site's Cloudflare-managed domain, if it has one; site.metadata.domain
+  // set any other way (e.g. a pre-existing site from before this rule) shows as a warning instead.
+  const cloudflareDomain = state.domains.find((item) => item.siteId === site.id);
 
   const currentRobotsTxt = await fs
     .readFile(path.join(site.repoPath, "robots.txt"), "utf8")
@@ -357,11 +356,39 @@ export default async function SiteDetailPage({
               />
             </div>
             <div className="field">
-              <label htmlFor="domain">Domain</label>
-              <DomainPicker
-                initialValue={site.metadata.domain ?? ""}
-                options={aapanelDomainOptions}
-              />
+              <label>Domain</label>
+              {cloudflareDomain ? (
+                <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 13.5 }}>
+                  {cloudflareDomain.domain}
+                  <span
+                    className="status"
+                    style={{ fontSize: 11, background: domainStatusColor[cloudflareDomain.status], color: "#fff", border: "none" }}
+                  >
+                    {domainStatusLabel[cloudflareDomain.status] ?? cloudflareDomain.status}
+                  </span>
+                  <Link href="/domains" style={{ fontSize: 12.5 }}>
+                    Manage on Domains →
+                  </Link>
+                </p>
+              ) : site.metadata.domain ? (
+                <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, flexWrap: "wrap" }}>
+                  {site.metadata.domain}
+                  <span className="status" style={{ fontSize: 11, color: "var(--warn)", borderColor: "var(--warn)" }}>
+                    Not via Cloudflare
+                  </span>
+                  <Link href={`/domains?connect=${encodeURIComponent(site.metadata.domain)}`} style={{ fontSize: 12.5, color: "var(--warn)" }}>
+                    This exposes your server&apos;s real IP — connect it through Cloudflare →
+                  </Link>
+                </p>
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+                  No domain yet.{" "}
+                  <Link href="/domains" style={{ fontSize: 13.5 }}>
+                    Connect one on the Domains page
+                  </Link>
+                  {" "}— every domain goes through Cloudflare, so your server&apos;s real IP is never exposed via DNS.
+                </p>
+              )}
             </div>
           </div>
 

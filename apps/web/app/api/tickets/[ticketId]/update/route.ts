@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import type { TicketPriority, TicketSpecialistType, TicketStatus } from "@igle/core";
 import { runtime } from "../../../../../lib/runtime";
-import { resolveRequestOrigin } from "../../../../../lib/session";
+import { requireActor, resolveRequestOrigin } from "../../../../../lib/session";
 
 const statuses: TicketStatus[] = ["open", "in-progress", "done", "cancelled"];
 const specialistTypes: TicketSpecialistType[] = ["developer", "designer", "seo", "copywriter"];
@@ -14,11 +14,13 @@ export async function POST(request: Request, context: { params: Promise<{ ticket
   const { ticketId } = await context.params;
 
   try {
+    await requireActor();
     const form = await request.formData();
     const status = String(form.get("status") ?? "");
     const priority = String(form.get("priority") ?? "");
     const specialistType = String(form.get("specialistType") ?? "");
     const deadlineRaw = form.has("deadline") ? String(form.get("deadline") ?? "").trim() : undefined;
+    const assigneeIdRaw = form.has("assigneeId") ? String(form.get("assigneeId") ?? "").trim() : undefined;
 
     if (status && !statuses.includes(status as TicketStatus)) throw new IgleError("INVALID_TICKET", "Invalid status.", 400);
     if (priority && !priorities.includes(priority as TicketPriority)) throw new IgleError("INVALID_TICKET", "Invalid priority.", 400);
@@ -30,7 +32,8 @@ export async function POST(request: Request, context: { params: Promise<{ ticket
       status: status ? (status as TicketStatus) : undefined,
       priority: priority ? (priority as TicketPriority) : undefined,
       specialistType: specialistType ? (specialistType as TicketSpecialistType) : undefined,
-      deadline: deadlineRaw === undefined ? undefined : deadlineRaw === "" ? null : deadlineRaw
+      deadline: deadlineRaw === undefined ? undefined : deadlineRaw === "" ? null : deadlineRaw,
+      assigneeId: assigneeIdRaw === undefined ? undefined : assigneeIdRaw === "" ? null : assigneeIdRaw
     });
 
     if (wantsRedirect) {

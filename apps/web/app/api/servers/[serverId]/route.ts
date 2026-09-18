@@ -14,9 +14,10 @@ export async function POST(request: Request, context: { params: Promise<{ server
     const name = String(form.get("name") ?? "").trim();
     const baseUrl = String(form.get("baseUrl") ?? "").trim();
     const apiKey = String(form.get("apiKey") ?? "").trim();
+    const publicIp = String(form.get("publicIp") ?? "").trim();
     const restricted = form.get("restricted") === "on";
 
-    await runtime.serverService.update(serverId, { name, baseUrl, apiKey, restricted }, actor);
+    await runtime.serverService.update(serverId, { name, baseUrl, apiKey, publicIp, restricted }, actor);
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL("/servers?updated=1", resolveRequestOrigin(request)), { status: 303 });

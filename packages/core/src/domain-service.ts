@@ -159,6 +159,15 @@ export class DomainService {
       actor
     );
 
+    // A site keeps only one primary domain (site.metadata.domain is a single string) — clear any
+    // other DomainRecord still pointing at this site so it doesn't linger as a stale "assigned"
+    // reference on the Domains page once this domain has taken over.
+    await this.stateStore.update((state) => {
+      for (const record of state.domains) {
+        if (record.siteId === siteId && record.id !== domainId) record.siteId = undefined;
+      }
+    });
+
     return this.updateDomain(domainId, (record) => {
       record.siteId = siteId;
     });

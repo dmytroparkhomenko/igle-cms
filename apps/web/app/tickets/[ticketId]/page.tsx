@@ -21,10 +21,15 @@ export default async function TicketDetailPage({
 }) {
   const { ticketId } = await params;
   const { created, updated, commented, error } = await searchParams;
+  const actor = await requireActorOrRedirect();
   const ticket = await runtime.ticketService.get(ticketId);
   if (!ticket) notFound();
 
-  const site = ticket.siteId ? await runtime.siteService.get(ticket.siteId, (await requireActorOrRedirect())) : undefined;
+  const [site, members] = await Promise.all([
+    ticket.siteId ? runtime.siteService.get(ticket.siteId, actor) : Promise.resolve(undefined),
+    runtime.authService.listSelectable(actor)
+  ]);
+  const assignee = ticket.assigneeId ? members.find((member) => member.id === ticket.assigneeId) : undefined;
   const comments = ticket.comments.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return (
@@ -34,6 +39,8 @@ export default async function TicketDetailPage({
           <h1>{ticket.title}</h1>
           <p className="muted">
             {specialistLabel[ticket.specialistType]}
+            {" · "}
+            {assignee ? assignee.name || assignee.email : "Unassigned"}
             {site ? (
               <>
                 {" · "}
@@ -81,7 +88,7 @@ export default async function TicketDetailPage({
         method="post"
         action={`/api/tickets/${ticket.id}/update`}
         className="card"
-        style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 28, alignItems: "end" }}
+        style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 28, alignItems: "end" }}
       >
         <div>
           <label className="muted" htmlFor="status">
@@ -92,6 +99,19 @@ export default async function TicketDetailPage({
             <option value="in-progress">In progress</option>
             <option value="done">Done</option>
             <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div>
+          <label className="muted" htmlFor="assigneeId">
+            Assignee
+          </label>
+          <select id="assigneeId" name="assigneeId" defaultValue={ticket.assigneeId ?? ""}>
+            <option value="">Unassigned</option>
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name || member.email}
+              </option>
+            ))}
           </select>
         </div>
         <div>
@@ -107,7 +127,7 @@ export default async function TicketDetailPage({
         </div>
         <div>
           <label className="muted" htmlFor="specialistType">
-            Assigned to
+            Category
           </label>
           <select id="specialistType" name="specialistType" defaultValue={ticket.specialistType}>
             <option value="developer">Developer</option>
@@ -150,12 +170,8 @@ export default async function TicketDetailPage({
       </div>
 
       <form method="post" action={`/api/tickets/${ticket.id}/comments`} className="card" style={{ display: "grid", gap: 10, maxWidth: 480 }}>
-        <label className="muted" htmlFor="author">
-          Your name
-        </label>
-        <input type="text" id="author" name="author" required />
         <label className="muted" htmlFor="body">
-          Comment
+          Comment as {actor.email}
         </label>
         <textarea id="body" name="body" rows={3} required style={{ font: "inherit", padding: 8, borderRadius: 6, border: "1px solid var(--line)" }} />
         <button className="button" type="submit" style={{ justifySelf: "start" }}>

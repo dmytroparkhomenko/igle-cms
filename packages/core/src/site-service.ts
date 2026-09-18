@@ -56,6 +56,7 @@ export class SiteService {
       deploymentTarget: "local",
       status: "draft",
       sourceType: "blank",
+      starred: false,
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
       sitemap: { enabled: true },
       robots: { mode: "cms-generated" },
@@ -169,6 +170,13 @@ export class SiteService {
     const domain = input.domain?.trim();
     if (domain && !DOMAIN_PATTERN.test(domain)) {
       throw new IgleError("INVALID_DOMAIN", "Enter a valid domain, e.g. example.com.", 400, { domain });
+    }
+    if (domain && domain !== site.metadata.domain) {
+      const state = await this.stateStore.read();
+      const conflict = state.sites.find((item) => item.id !== site.id && item.metadata.domain === domain);
+      if (conflict) {
+        throw new IgleError("DOMAIN_IN_USE", `"${domain}" is already assigned to "${conflict.metadata.name}".`, 409, { domain });
+      }
     }
     const language = input.language?.trim();
     if (language && !LANGUAGE_PATTERN.test(language)) {
@@ -414,6 +422,15 @@ export class SiteService {
   async list(_actor: Actor): Promise<SiteRecord[]> {
     const state = await this.stateStore.read();
     return state.sites;
+  }
+
+  /** Pins/unpins a site to the top of the Sites list — a pure organizational flag, not content, so it's not a revision. */
+  async setStarred(site: SiteRecord, starred: boolean, actor: Actor): Promise<void> {
+    assertCan(actor, "sites.edit", site.id);
+    await this.stateStore.update((state) => {
+      const record = state.sites.find((item) => item.id === site.id);
+      if (record) record.metadata.starred = starred;
+    });
   }
 
   async get(siteIdOrSlug: string, actor: Actor): Promise<SiteRecord | undefined> {

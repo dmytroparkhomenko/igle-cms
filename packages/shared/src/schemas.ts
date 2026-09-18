@@ -41,6 +41,8 @@ export const siteMetadataSchema = z.object({
   duplicatedFromRevisionId: z.string().optional(),
   /** The other site this one is a full-copy mirror of — set only on the "mirror" side of the pair (see MirrorService). */
   mirrorOfSiteId: z.string().optional(),
+  /** Pins a site to the top of the Sites list — purely organizational, not written to the repo's own site.json unless some other save happens to touch it. */
+  starred: z.boolean().default(false),
   seoLimits: seoLimitsSchema.default({
     titleMin: 30,
     titleMax: 60,

@@ -149,6 +149,7 @@ export class TemplateService {
       deploymentTarget: "local",
       status: "draft",
       sourceType: "template",
+      starred: false,
       templateKey: manifest.key,
       templateVersion: manifest.version,
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
