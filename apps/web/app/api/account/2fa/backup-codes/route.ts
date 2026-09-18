@@ -11,15 +11,13 @@ export async function POST(request: Request) {
     const actor = await requireActor();
     const form = await request.formData();
     const code = String(form.get("code") ?? "");
-    const { backupCodes } = await runtime.authService.confirmTotpEnrollment(actor, code);
-    if (backupCodes) await createBackupCodesRevealCookie(backupCodes, request);
+    const { codes } = await runtime.authService.regenerateBackupCodes(actor, code);
+    await createBackupCodesRevealCookie(codes, request);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(backupCodes ? "/backup-codes" : "/settings?twoFactorEnabled=1", resolveRequestOrigin(request)), {
-        status: 303
-      });
+      return NextResponse.redirect(new URL("/backup-codes", resolveRequestOrigin(request)), { status: 303 });
     }
-    return NextResponse.json({ ok: true, ...(backupCodes ? { backupCodes } : {}) });
+    return NextResponse.json({ ok: true, codes });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {

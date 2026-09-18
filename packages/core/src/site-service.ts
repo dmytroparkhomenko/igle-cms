@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { applyPageSEO, parsePageSEO } from "@igle/html-engine";
 import { assertCan, effectiveSiteLanguageTag, IgleError, matchesSiteLanguage, resolveInside, type Actor, type SiteMetadata } from "@igle/shared";
 import { ensureIgleMetadata, writeSiteMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
 import { JsonStateStore, id } from "./state-store.js";
-import type { SiteRecord } from "./types.js";
+import type { PageIndexRecord, SiteRecord } from "./types.js";
 
 export interface CreateBlankSiteInput {
   name: string;
@@ -83,11 +84,68 @@ export class SiteService {
 `,
       "utf8"
     );
-    await ensureIgleMetadata(repoPath, metadata);
+
+    const homepageHtml = await fs.readFile(path.join(repoPath, "index.html"), "utf8");
+    const parsed = parsePageSEO(homepageHtml);
+    const homepage: PageIndexRecord = {
+      id: id("page"),
+      siteId,
+      filePath: "index.html",
+      route: "/",
+      internalName: "Home",
+      seoTitle: parsed.seoTitle.value,
+      metaDescription: parsed.metaDescription.value,
+      h1: parsed.h1.value,
+      canonical: parsed.canonical.value,
+      robots: parsed.robots.value,
+      lang: parsed.lang,
+      ogTitle: parsed.ogTitle.value,
+      ogDescription: parsed.ogDescription.value,
+      fieldStates: {
+        seoTitle: parsed.seoTitle.state,
+        metaDescription: parsed.metaDescription.state,
+        h1: parsed.h1.state,
+        canonical: parsed.canonical.state,
+        robots: parsed.robots.state,
+        ogTitle: parsed.ogTitle.state,
+        ogDescription: parsed.ogDescription.state,
+        lang: "inherited"
+      },
+      h1Count: parsed.h1Count,
+      wordCount: parsed.wordCount,
+      imagesCount: parsed.imagesCount,
+      imagesMissingAlt: parsed.imagesMissingAlt,
+      inSitemap: true,
+      fileHash: hash(homepageHtml),
+      auditIssues: parsed.issues
+    };
+
+    await ensureIgleMetadata(repoPath, metadata, {
+      pages: [
+        {
+          id: homepage.id,
+          filePath: homepage.filePath,
+          route: homepage.route,
+          internalName: homepage.internalName,
+          inSitemap: homepage.inSitemap,
+          fieldStates: {
+            seoTitle: homepage.fieldStates.seoTitle ?? "absent",
+            metaDescription: homepage.fieldStates.metaDescription ?? "absent",
+            h1: homepage.fieldStates.h1 ?? "absent",
+            canonical: homepage.fieldStates.canonical ?? "absent",
+            robots: homepage.fieldStates.robots ?? "absent",
+            ogTitle: homepage.fieldStates.ogTitle ?? "absent",
+            ogDescription: homepage.fieldStates.ogDescription ?? "absent"
+          },
+          lastWrittenHashes: {}
+        }
+      ]
+    });
 
     const site: SiteRecord = { id: siteId, slug: input.slug, repoPath, metadata };
     await this.stateStore.update((state) => {
       state.sites.push(site);
+      state.pages.push(homepage);
     });
     const revision = await this.revisionService.commitRevision({
       site,
@@ -100,6 +158,8 @@ export class SiteService {
     await this.stateStore.update((state) => {
       const existing = state.sites.find((item) => item.id === site.id);
       if (existing) existing.headRevisionId = revision.id;
+      const page = state.pages.find((item) => item.id === homepage.id);
+      if (page) page.lastRevisionId = revision.id;
     });
     return site;
   }
@@ -343,6 +403,10 @@ export class SiteService {
       state.revisions = state.revisions.filter((item) => item.siteId !== site.id);
       state.drafts = state.drafts.filter((item) => item.siteId !== site.id);
       state.deployments = state.deployments.filter((item) => item.siteId !== site.id);
+      // Deleting one half of a mirror pair leaves the other pointing at a site that's gone.
+      for (const other of state.sites) {
+        if (other.metadata.mirrorOfSiteId === site.id) other.metadata.mirrorOfSiteId = undefined;
+      }
     });
   }
 
@@ -359,6 +423,10 @@ export class SiteService {
     assertCan(actor, "sites.read", site.id);
     return site;
   }
+}
+
+function hash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
 function escapeHtml(value: string): string {

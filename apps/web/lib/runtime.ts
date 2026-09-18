@@ -8,6 +8,7 @@ import { DraftService } from "../../../packages/core/src/draft-service";
 import { ImportService } from "../../../packages/core/src/import-service";
 import { JobService } from "../../../packages/core/src/job-service";
 import { MediaService } from "../../../packages/core/src/media-service";
+import { MirrorService } from "../../../packages/core/src/mirror-service";
 import { PageService } from "../../../packages/core/src/page-service";
 import { RedirectService } from "../../../packages/core/src/redirect-service";
 import { RevisionService } from "../../../packages/core/src/revision-service";
@@ -43,6 +44,7 @@ const scriptService = new ScriptService(revisionService);
 const templateService = new TemplateService(templatesDir, customTemplatesDir, dataDir, stateStore, revisionService);
 const verificationService = new VerificationService(revisionService);
 const affiliateLinkService = new AffiliateLinkService(stateStore);
+const mirrorService = new MirrorService(stateStore, importService, revisionService);
 
 // First-run bootstrap: with no users yet, ADMIN_EMAIL/ADMIN_PASSWORD (set once in .env) creates
 // the first administrator and seeds the shared team password. A no-op on every run after that.
@@ -86,5 +88,6 @@ export const runtime = {
   serverService,
   affiliateLinkService,
   cloudflareAccountService,
-  domainService
+  domainService,
+  mirrorService
 };

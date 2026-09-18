@@ -247,6 +247,52 @@ export class SEOService {
   }
 
   /**
+   * Sets `<link rel="icon" href="...">` on every page that has zero-or-one already (inserting it
+   * into `<head>` where absent, updating it where present), as one revision — the site-wide
+   * "change the favicon everywhere" counterpart to replaceSharedElement. A page with more than one
+   * `rel="icon"` link (e.g. separate 16x16/32x32 variants) is left alone and reported as skipped,
+   * the same conservative "don't guess which one" behavior applyPageSEO already uses for canonical.
+   */
+  async applyFaviconToAllPages(site: SiteRecord, faviconHref: string, actor: Actor): Promise<BulkSeoResult> {
+    assertCan(actor, "sites.edit", site.id);
+    const pages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
+    const updatedPageIds: string[] = [];
+    const skipped: BulkSeoResult["skipped"] = [];
+
+    for (const page of pages) {
+      const filePath = resolveInside(site.repoPath, page.filePath);
+      try {
+        const original = await fs.readFile(filePath, "utf8");
+        const result = applyPageSEO(original, { favicon: faviconHref });
+        if (result.patches.length === 0) continue;
+        await fs.writeFile(filePath, result.html, "utf8");
+        updatedPageIds.push(page.id);
+      } catch (error) {
+        skipped.push({ pageId: page.id, reason: error instanceof Error ? error.message : "Failed to apply." });
+      }
+    }
+
+    if (updatedPageIds.length === 0) {
+      const existing = await this.revisionService.latest(site.id);
+      return { revisionNumber: existing?.revisionNumber ?? 0, updatedPageIds, skipped };
+    }
+
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "site-settings",
+      title: `Updated favicon: ${updatedPageIds.length} page(s)`,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    for (const pageId of updatedPageIds) {
+      const page = await this.getPage(site.id, pageId);
+      if (page) await this.reindexPage(site, page, revision.id);
+    }
+
+    return { revisionNumber: revision.revisionNumber, updatedPageIds, skipped };
+  }
+
+  /**
    * Rewrites every relative href/src across every page of the site to an absolute root-relative
    * path (see absolutizeRelativeReferences) — the fix for navigation links that work from some
    * pages but break from others depending on how deeply nested the page's own URL is. Also
@@ -711,6 +757,11 @@ function parsedField(parsed: ReturnType<typeof parsePageSEO>, key: keyof SeoPatc
       // handles it separately via setPageLanguage); this case only exists to satisfy the
       // exhaustiveness check now that SeoPatchInput includes it.
       return { value: parsed.lang, state: parsed.lang === undefined ? "absent" : "explicit", occurrences: parsed.lang === undefined ? 0 : 1 };
+    case "favicon":
+      // favicon is only ever set site-wide via SEOService.applyFaviconToAllPages, which calls
+      // applyPageSEO directly and never goes through updateFields — this case only exists to
+      // satisfy the exhaustiveness check now that SeoPatchInput includes it.
+      return { state: "absent", occurrences: 0 };
   }
 }
 

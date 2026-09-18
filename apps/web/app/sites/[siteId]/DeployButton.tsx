@@ -10,8 +10,19 @@ interface DeploymentResult {
   sslError?: string;
 }
 
+interface MirrorResult {
+  siteName: string;
+  deployment?: DeploymentResult;
+  error?: string;
+}
+
 export function DeployButton({ siteId, disabled }: { siteId: string; disabled: boolean }) {
-  const [state, setState] = useState<{ kind: "idle" | "loading" | "done" | "error"; result?: DeploymentResult; error?: string }>({
+  const [state, setState] = useState<{
+    kind: "idle" | "loading" | "done" | "error";
+    result?: DeploymentResult;
+    mirror?: MirrorResult | undefined;
+    error?: string;
+  }>({
     kind: "idle"
   });
 
@@ -24,7 +35,7 @@ export function DeployButton({ siteId, disabled }: { siteId: string; disabled: b
         setState({ kind: "error", error: body?.error?.message ?? "Deploy failed." });
         return;
       }
-      setState({ kind: "done", result: body.deployment as DeploymentResult });
+      setState({ kind: "done", result: body.deployment as DeploymentResult, mirror: body.mirror as MirrorResult | undefined });
     } catch (error) {
       setState({ kind: "error", error: error instanceof Error ? error.message : "Deploy failed." });
     }
@@ -61,6 +72,19 @@ export function DeployButton({ siteId, disabled }: { siteId: string; disabled: b
                 ) : null}
                 {state.result.sslError ? (
                   <p style={{ color: "var(--warn)", margin: "8px 0 0", fontSize: 13.5 }}>SSL: {state.result.sslError}</p>
+                ) : null}
+                {state.mirror ? (
+                  <p
+                    className="muted"
+                    style={{ margin: "10px 0 0", fontSize: 12.5, paddingTop: 10, borderTop: "1px solid var(--line)" }}
+                  >
+                    Mirror <strong>{state.mirror.siteName}</strong>:{" "}
+                    {state.mirror.deployment
+                      ? state.mirror.deployment.status === "success"
+                        ? "deployed"
+                        : `failed${state.mirror.deployment.error ? ` — ${state.mirror.deployment.error}` : ""}`
+                      : `failed — ${state.mirror.error ?? "unknown error"}`}
+                  </p>
                 ) : null}
                 <button className="button" type="button" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>
                   Done

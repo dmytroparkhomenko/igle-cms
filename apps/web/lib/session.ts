@@ -5,8 +5,10 @@ import { runtime } from "./runtime";
 
 export const SESSION_COOKIE = "igle_session";
 export const PENDING_TWO_FACTOR_COOKIE = "igle_2fa_pending";
+const BACKUP_CODES_REVEAL_COOKIE = "igle_backup_codes_reveal";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PENDING_TWO_FACTOR_TTL_MS = 5 * 60 * 1000;
+const BACKUP_CODES_REVEAL_TTL_MS = 5 * 60 * 1000;
 
 export async function getCurrentActor(): Promise<Actor | undefined> {
   const store = await cookies();
@@ -95,4 +97,30 @@ export async function getPendingTwoFactorToken(): Promise<string | undefined> {
 export async function clearPendingTwoFactorCookie(): Promise<void> {
   const store = await cookies();
   store.delete(PENDING_TWO_FACTOR_COOKIE);
+}
+
+/**
+ * Carries freshly-generated backup codes from the API route that created them to the /backup-codes
+ * page that displays them — never persisted anywhere else in plaintext. Read via
+ * peekBackupCodesRevealCookie; expiry (a few minutes) is what makes the reveal one-time in
+ * practice, since a Server Component render can read cookies but isn't allowed to mutate them
+ * (only Route Handlers/Server Actions can), so this can't also delete the cookie the moment
+ * /backup-codes reads it.
+ */
+export async function createBackupCodesRevealCookie(codes: string[], request: Request): Promise<void> {
+  const store = await cookies();
+  store.set(BACKUP_CODES_REVEAL_COOKIE, codes.join(","), {
+    httpOnly: true,
+    secure: isHttpsRequest(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: BACKUP_CODES_REVEAL_TTL_MS / 1000
+  });
+}
+
+/** Read-only: returns the pending backup codes, if the reveal cookie hasn't expired yet. */
+export async function peekBackupCodesRevealCookie(): Promise<string[] | undefined> {
+  const store = await cookies();
+  const raw = store.get(BACKUP_CODES_REVEAL_COOKIE)?.value;
+  return raw ? raw.split(",") : undefined;
 }

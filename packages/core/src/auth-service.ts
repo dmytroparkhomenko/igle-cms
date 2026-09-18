@@ -9,6 +9,19 @@ const TOTP_ISSUER = "Igle CMS";
 const PENDING_TWO_FACTOR_TTL_MS = 5 * 60 * 1000;
 const SETUP_TWO_FACTOR_TTL_MS = 15 * 60 * 1000;
 const MAX_TWO_FACTOR_ATTEMPTS = 5;
+const BACKUP_CODE_COUNT = 8;
+
+/** Ten hex characters, formatted like "A1B2C-D3E4F" — enough entropy for a one-time local recovery code, no ambiguous characters (pure hex) to transcribe from a saved list. */
+function generateBackupCodes(): string[] {
+  return Array.from({ length: BACKUP_CODE_COUNT }, () => {
+    const raw = randomBytes(5).toString("hex").toUpperCase();
+    return `${raw.slice(0, 5)}-${raw.slice(5, 10)}`;
+  });
+}
+
+function normalizeBackupCode(code: string): string {
+  return code.trim().toUpperCase().replace(/\s+/g, "");
+}
 
 /** The otpauth:// URI for a user's (pending or active) secret — what a QR code needs to encode so an authenticator app can pick it up. */
 export function buildTotpOtpauthUrl(email: string, base32Secret: string): string {
@@ -279,7 +292,7 @@ export class AuthService {
    * setup yet, this is also the moment it does. Wrong codes count against a per-token attempt
    * limit rather than the account-wide login lockout, since the password already checked out.
    */
-  async verifyTwoFactorAndCreateSession(pendingToken: string, code: string): Promise<{ sessionId: string }> {
+  async verifyTwoFactorAndCreateSession(pendingToken: string, code: string): Promise<{ sessionId: string; backupCodes?: string[] }> {
     const state = await this.stateStore.read();
     const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
     if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
@@ -305,6 +318,17 @@ export class AuthService {
       throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
     }
 
+    // Generating backup codes the moment 2FA first turns on (not before, and not on every
+    // ordinary login) ties them to this secret's "epoch" — a fresh set every time setup happens,
+    // including a redo after adminResetTwoFactor or a lost-device recovery, so old codes tied to
+    // a secret that's no longer in use can never be replayed.
+    const wasSetupRequired = !user.twoFactorEnabled;
+    let backupCodes: string[] | undefined;
+    if (wasSetupRequired) {
+      backupCodes = generateBackupCodes();
+      user.twoFactorBackupCodeHashes = await Promise.all(backupCodes.map((backupCode) => bcrypt.hash(backupCode, 10)));
+    }
+
     user.twoFactorEnabled = true;
     state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
     const sessionId = id("sess");
@@ -314,7 +338,58 @@ export class AuthService {
       expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
     });
     await this.stateStore.write(state);
-    return { sessionId };
+    return { sessionId, ...(backupCodes ? { backupCodes } : {}) };
+  }
+
+  /**
+   * Self-service recovery for a lost/wiped authenticator device — no admin needed. Each backup
+   * code works once; a correct one immediately retires the old secret and remaining codes and
+   * routes this SAME pending sign-in straight back into fresh setup (a new QR code), the same
+   * "next login walks you through setup again" outcome adminResetTwoFactor produces, just
+   * triggered by the account holder instead of another administrator.
+   */
+  async verifyBackupCodeAndRestartSetup(pendingToken: string, code: string): Promise<void> {
+    const state = await this.stateStore.read();
+    const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
+    if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
+    }
+    const user = state.users.find((item) => item.id === pending.userId);
+    if (!user) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
+    }
+    if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      await this.stateStore.write(state);
+      throw new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429);
+    }
+
+    const hashes = user.twoFactorBackupCodeHashes ?? [];
+    const normalized = normalizeBackupCode(code);
+    let matchedIndex = -1;
+    for (let i = 0; i < hashes.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await bcrypt.compare(normalized, hashes[i]!)) {
+        matchedIndex = i;
+        break;
+      }
+    }
+    if (matchedIndex === -1) {
+      pending.attempts += 1;
+      await this.stateStore.write(state);
+      throw new IgleError("INVALID_CODE", "That backup code is incorrect or has already been used.", 401);
+    }
+
+    user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
+    user.twoFactorEnabled = false;
+    user.twoFactorBackupCodeHashes = hashes.filter((_, index) => index !== matchedIndex);
+    pending.attempts = 0;
+    pending.expiresAt = new Date(Date.now() + SETUP_TWO_FACTOR_TTL_MS).toISOString();
+    await this.stateStore.write(state);
   }
 
   /** Starts (or restarts) 2FA setup for the actor's own account. The secret is stored right away but 2FA doesn't actually turn on until confirmTotpEnrollment verifies a real code from it — otherwise a typo while scanning the QR code could lock the account out. */
@@ -330,16 +405,25 @@ export class AuthService {
   }
 
   /** Confirms setup with a real code from the authenticator app — this is the moment 2FA actually turns on. */
-  async confirmTotpEnrollment(actor: Actor, code: string): Promise<void> {
+  async confirmTotpEnrollment(actor: Actor, code: string): Promise<{ backupCodes?: string[] }> {
     const state = await this.stateStore.read();
     const user = state.users.find((item) => item.id === actor.id);
     if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
     if (!user.twoFactorSecret) throw new IgleError("TWO_FACTOR_NOT_STARTED", "Start two-factor setup first.", 400);
     if (!validateTotpCode(user.twoFactorSecret, code)) throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
+
+    const wasSetupRequired = !user.twoFactorEnabled;
+    const backupCodes = wasSetupRequired ? generateBackupCodes() : undefined;
+    const backupCodeHashes = backupCodes ? await Promise.all(backupCodes.map((backupCode) => bcrypt.hash(backupCode, 10))) : undefined;
+
     await this.stateStore.update((current) => {
       const record = current.users.find((item) => item.id === actor.id);
-      if (record) record.twoFactorEnabled = true;
+      if (record) {
+        record.twoFactorEnabled = true;
+        if (backupCodeHashes) record.twoFactorBackupCodeHashes = backupCodeHashes;
+      }
     });
+    return { ...(backupCodes ? { backupCodes } : {}) };
   }
 
   /** Turns 2FA off for the actor's own account. Requires a currently-valid code (not just an active session) so a momentarily-unlocked device can't silently strip the protection back off. */
@@ -354,8 +438,28 @@ export class AuthService {
       if (record) {
         record.twoFactorEnabled = false;
         record.twoFactorSecret = undefined;
+        record.twoFactorBackupCodeHashes = undefined;
       }
     });
+  }
+
+  /** Self-service: replaces the actor's own backup codes with a fresh set (e.g. after using some, or losing the saved list) — requires a currently-valid code for the same reason disableTotp does. */
+  async regenerateBackupCodes(actor: Actor, code: string): Promise<{ codes: string[] }> {
+    const state = await this.stateStore.read();
+    const user = state.users.find((item) => item.id === actor.id);
+    if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+    if (!user.twoFactorEnabled || !user.twoFactorSecret) {
+      throw new IgleError("TWO_FACTOR_NOT_ENABLED", "Turn on two-factor authentication first.", 400);
+    }
+    if (!validateTotpCode(user.twoFactorSecret, code)) throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
+
+    const codes = generateBackupCodes();
+    const hashes = await Promise.all(codes.map((backupCode) => bcrypt.hash(backupCode, 10)));
+    await this.stateStore.update((current) => {
+      const record = current.users.find((item) => item.id === actor.id);
+      if (record) record.twoFactorBackupCodeHashes = hashes;
+    });
+    return { codes };
   }
 
   /**
@@ -371,6 +475,7 @@ export class AuthService {
       if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
       user.twoFactorEnabled = false;
       user.twoFactorSecret = undefined;
+      user.twoFactorBackupCodeHashes = undefined;
     });
   }
 

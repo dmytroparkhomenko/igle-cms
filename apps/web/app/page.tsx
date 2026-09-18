@@ -25,7 +25,7 @@ export default async function DashboardPage() {
       <div className="toolbar">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">Overview of the CMS — signed in as {actor.email}.</p>
+          <p className="muted">Signed in as {actor.email}.</p>
         </div>
       </div>
 

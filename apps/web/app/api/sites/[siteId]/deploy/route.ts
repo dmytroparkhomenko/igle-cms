@@ -12,7 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const site = await runtime.siteService.get(siteId, (await requireActor()));
     if (!site) throw new IgleError("SITE_NOT_FOUND", "Site was not found.", 404);
 
-    const deployment = await runtime.deployService.deploy(site, (await requireActor()));
+    const { deployment, mirror } = await runtime.deployService.deploy(site, (await requireActor()));
 
     if (wantsRedirect) {
       const url =
@@ -21,7 +21,12 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
           : `/sites/${site.id}?deployError=${encodeURIComponent(deployment.error ?? "Deployment failed.")}`;
       return NextResponse.redirect(new URL(url, resolveRequestOrigin(request)), { status: 303 });
     }
-    return NextResponse.json({ deployment });
+    return NextResponse.json({
+      deployment,
+      ...(mirror
+        ? { mirror: { siteName: mirror.site.metadata.name, deployment: mirror.deployment, error: mirror.error } }
+        : {})
+    });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {

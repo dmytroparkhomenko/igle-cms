@@ -52,6 +52,7 @@ export interface SeoPatchInput {
   ogTitle?: string | null;
   ogDescription?: string | null;
   lang?: string | null;
+  favicon?: string | null;
 }
 
 interface ElementNode {
@@ -164,6 +165,7 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
   const descriptionNodes = findMetaByName(document, "description");
   const h1Nodes = findElements(document, "h1").filter((node) => isInsideBody(node));
   const canonicalNodes = findLinksByRel(document, "canonical");
+  const faviconNodes = findLinksByRel(document, "icon");
   const robotsNodes = findMetaByName(document, "robots");
   const ogTitleNodes = findMetaByProperty(document, "og:title");
   const ogDescriptionNodes = findMetaByProperty(document, "og:description");
@@ -194,6 +196,10 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
 
   if (fields.canonical !== undefined) {
     applySingletonAttribute(ms, html, canonicalNodes, headNode, "link", "href", fields.canonical, patches, '<link rel="canonical" href="">');
+  }
+
+  if (fields.favicon !== undefined) {
+    applySingletonAttribute(ms, html, faviconNodes, headNode, "link", "href", fields.favicon, patches, '<link rel="icon" href="">');
   }
 
   if (fields.robots !== undefined) {

@@ -117,6 +117,8 @@ export interface UserRecord {
   canDeployRestricted: boolean;
   twoFactorSecret?: string | undefined;
   twoFactorEnabled: boolean;
+  /** bcrypt hashes of unused one-time backup codes — self-service recovery when the authenticator device is lost. Never store the plaintext codes; each is shown to the user exactly once, right after it's generated. */
+  twoFactorBackupCodeHashes?: string[] | undefined;
   requireTwoFactor: boolean;
   lockedUntil?: string | undefined;
   failedLoginWindowStartedAt?: string | undefined;

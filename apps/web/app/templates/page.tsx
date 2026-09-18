@@ -9,7 +9,7 @@ export default async function TemplatesPage() {
       <div className="toolbar">
         <div>
           <h1>Templates</h1>
-          <p className="muted">Click a template to preview it and launch a new site from it.</p>
+          <p className="muted">{templates.length} available.</p>
         </div>
         <Link href="/templates/upload" className="button">
           Upload template

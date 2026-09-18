@@ -39,6 +39,8 @@ export const siteMetadataSchema = z.object({
   templateVersion: z.string().optional(),
   duplicatedFromSiteId: z.string().optional(),
   duplicatedFromRevisionId: z.string().optional(),
+  /** The other site this one is a full-copy mirror of — set only on the "mirror" side of the pair (see MirrorService). */
+  mirrorOfSiteId: z.string().optional(),
   seoLimits: seoLimitsSchema.default({
     titleMin: 30,
     titleMax: 60,

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { scriptsMetadataSchema, validatePagesMetadata, validateSiteMetadata } from "@igle/shared";
+import { effectiveSiteLanguageTag, scriptsMetadataSchema, validatePagesMetadata, validateSiteMetadata } from "@igle/shared";
 
 export interface FootprintIssue {
   filePath: string;
@@ -34,6 +34,8 @@ export interface BuildSiteInput {
   buildId?: string;
   productionBaseUrl?: string;
   minifyHtml?: boolean;
+  /** Mirror pair (see MirrorService/DeployService) — when set, every page gets reciprocal hreflang tags gluing this build's domain to the partner's. */
+  hreflangPartner?: { baseUrl: string; languageTag: string };
 }
 
 export interface BuildSiteResult {
@@ -67,6 +69,9 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   }
   if (site.metaRobots === "noindex") {
     await injectNoindexMeta(buildPath);
+  }
+  if (input.hreflangPartner) {
+    await injectHreflang(buildPath, pages.pages, canonicalBase(site, input.productionBaseUrl), effectiveSiteLanguageTag(site), input.hreflangPartner);
   }
 
   const issues = await validateBuild(buildPath);
@@ -152,6 +157,26 @@ async function injectNoindexMeta(buildPath: string): Promise<void> {
     if (/<meta\s+[^>]*name\s*=\s*["']robots["']/i.test(html)) continue;
     if (!/<head[ >]/i.test(html)) continue;
     const updated = html.replace(/<head([^>]*)>/i, `<head$1>\n<meta name="robots" content="noindex">`);
+    await fs.writeFile(absolutePath, updated, "utf8");
+  }
+}
+
+/** Adds reciprocal `<link rel="alternate" hreflang>` tags (including a self-reference, as required for hreflang to be honored) to every page that has a same-route counterpart on the paired site — see BuildSiteInput.hreflangPartner. */
+async function injectHreflang(
+  buildPath: string,
+  pages: Array<{ filePath: string; route: string }>,
+  selfBase: string,
+  selfLanguageTag: string,
+  partner: { baseUrl: string; languageTag: string }
+): Promise<void> {
+  for (const page of pages) {
+    const absolutePath = path.join(buildPath, page.filePath);
+    const html = await fs.readFile(absolutePath, "utf8").catch(() => undefined);
+    if (html === undefined || !/<head[ >]/i.test(html)) continue;
+    const tags =
+      `<link rel="alternate" hreflang="${xmlEscape(selfLanguageTag)}" href="${xmlEscape(`${selfBase}${page.route}`)}">\n` +
+      `<link rel="alternate" hreflang="${xmlEscape(partner.languageTag)}" href="${xmlEscape(`${partner.baseUrl}${page.route}`)}">\n`;
+    const updated = html.replace(/<head([^>]*)>/i, `<head$1>\n${tags}`);
     await fs.writeFile(absolutePath, updated, "utf8");
   }
 }

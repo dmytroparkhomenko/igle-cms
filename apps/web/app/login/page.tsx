@@ -9,19 +9,15 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="login-shell">
-      <form className="card login-card" method="post" action="/api/auth/login" style={{ display: "grid", gap: 14 }}>
-        <div>
-          <div className="brand" style={{ marginBottom: 2 }}>
-            Igle CMS
-          </div>
-          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Sign in with your registered email and the team password.
-          </p>
+      <form className="card login-card" method="post" action="/api/auth/login">
+        <div className="login-brand">
+          <span className="login-mark" aria-hidden="true">
+            IC
+          </span>
+          <span className="brand">Igle CMS</span>
         </div>
 
-        {error ? (
-          <p style={{ margin: 0, fontSize: 13, color: "var(--warn)" }}>{error}</p>
-        ) : null}
+        {error ? <p className="login-error">{error}</p> : null}
 
         <div className="field">
           <label htmlFor="email">Email</label>

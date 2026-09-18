@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { apiError, IgleError } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
-import {
-  clearPendingTwoFactorCookie,
-  createBackupCodesRevealCookie,
-  createSessionCookie,
-  getPendingTwoFactorToken,
-  resolveRequestOrigin
-} from "../../../../../lib/session";
+import { clearPendingTwoFactorCookie, getPendingTwoFactorToken, resolveRequestOrigin } from "../../../../../lib/session";
 
+/**
+ * The lost-device path: a valid backup code retires the old secret and drops the sign-in straight
+ * back into setup (same pending token, now showing a fresh QR code) instead of granting a session
+ * outright — see verifyBackupCodeAndRestartSetup. Nothing here is a full login by itself.
+ */
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
   const wantsRedirect = accept.includes("text/html");
@@ -20,15 +19,12 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const code = String(form.get("code") ?? "");
 
-    const { sessionId, backupCodes } = await runtime.authService.verifyTwoFactorAndCreateSession(pendingToken, code);
-    await clearPendingTwoFactorCookie();
-    await createSessionCookie(sessionId, request);
-    if (backupCodes) await createBackupCodesRevealCookie(backupCodes, request);
+    await runtime.authService.verifyBackupCodeAndRestartSetup(pendingToken, code);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(backupCodes ? "/backup-codes" : "/", resolveRequestOrigin(request)), { status: 303 });
+      return NextResponse.redirect(new URL("/login/verify?backupAccepted=1", resolveRequestOrigin(request)), { status: 303 });
     }
-    return NextResponse.json({ ok: true, ...(backupCodes ? { backupCodes } : {}) });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (formatted.body.error.code === "TWO_FACTOR_EXPIRED" || formatted.body.error.code === "TOO_MANY_ATTEMPTS") {

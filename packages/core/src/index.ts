@@ -7,6 +7,7 @@ export * from "./import-service.js";
 export * from "./job-service.js";
 export * from "./media-service.js";
 export * from "./metadata-store.js";
+export * from "./mirror-service.js";
 export * from "./page-service.js";
 export * from "./redirect-service.js";
 export * from "./revision-service.js";

@@ -16,6 +16,7 @@ export default async function SettingsPage({
   const user = state.users.find((item) => item.id === actor.id);
   const isEnabled = Boolean(user?.twoFactorEnabled);
   const isPending = Boolean(user?.twoFactorSecret) && !isEnabled;
+  const backupCodesRemaining = user?.twoFactorBackupCodeHashes?.length ?? 0;
 
   let qrDataUrl: string | undefined;
   if (isPending && user?.twoFactorSecret) {
@@ -65,6 +66,32 @@ export default async function SettingsPage({
               <span className="badge badge-current">On</span>
               Your account is protected with an authenticator code.
             </p>
+
+            <div style={{ borderTop: "1px solid var(--line)", paddingTop: 14, marginTop: 4, marginBottom: 14 }}>
+              <p style={{ margin: "0 0 8px", fontSize: 13.5 }}>
+                <strong>{backupCodesRemaining}</strong> backup code{backupCodesRemaining === 1 ? "" : "s"} remaining —
+                use one instead of an authenticator code if you ever lose your device, no administrator needed.
+              </p>
+              <form method="post" action="/api/account/2fa/backup-codes" style={{ display: "grid", gap: 8, maxWidth: 260 }}>
+                <label className="muted" htmlFor="backupCodesCode" style={{ fontSize: 12.5 }}>
+                  Enter your current code to generate a fresh set
+                </label>
+                <input
+                  type="text"
+                  id="backupCodesCode"
+                  name="code"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  required
+                  style={{ letterSpacing: "0.2em" }}
+                />
+                <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", justifySelf: "start" }}>
+                  {backupCodesRemaining > 0 ? "Regenerate backup codes" : "Generate backup codes"}
+                </button>
+              </form>
+            </div>
+
             <form method="post" action="/api/account/2fa/disable" style={{ display: "grid", gap: 8, maxWidth: 260 }}>
               <label className="muted" htmlFor="disableCode" style={{ fontSize: 12.5 }}>
                 Enter your current code to turn it off

@@ -4,11 +4,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
+import { resolveAssetRef } from "../../../lib/asset-ref";
+import { extractFaviconHref } from "../../../lib/favicon";
 import { ApplyLanguageButton } from "./ApplyLanguageButton";
 import { DeployButton } from "./DeployButton";
 import { DomainPicker } from "./DomainPicker";
 import { FixLinksButton } from "./FixLinksButton";
 import { PageRow } from "./PageRow";
+import { PreviewImage } from "../../PreviewImage";
 import { PreviewLink } from "../../PreviewLink";
 
 export default async function SiteDetailPage({
@@ -29,6 +32,13 @@ export default async function SiteDetailPage({
     deployed?: string;
     deployError?: string;
     rolledBack?: string;
+    mirrored?: string;
+    mirrorSynced?: string;
+    mirrorDisconnected?: string;
+    mirrorError?: string;
+    faviconUpdated?: string;
+    faviconSkipped?: string;
+    faviconError?: string;
   }>;
 }) {
   const { siteId } = await params;
@@ -45,6 +55,13 @@ export default async function SiteDetailPage({
     deployed,
     deployError,
     rolledBack,
+    mirrored,
+    mirrorSynced,
+    mirrorDisconnected,
+    mirrorError,
+    faviconUpdated,
+    faviconSkipped,
+    faviconError,
   } = await searchParams;
   const revisionsLimit = Math.max(10, Number(revisionsLimitRaw) || 10);
   const actor = await requireActorOrRedirect();
@@ -64,7 +81,28 @@ export default async function SiteDetailPage({
     .slice()
     .sort((a, b) => b.revisionNumber - a.revisionNumber);
 
+  // Mirroring: the pairing is stored on only the "mirror" side (mirrorOfSiteId points at the
+  // "source"), so the partner might be either direction from this site's point of view.
+  const mirrorPartner = site.metadata.mirrorOfSiteId
+    ? state.sites.find((item) => item.id === site.metadata.mirrorOfSiteId)
+    : state.sites.find((item) => item.metadata.mirrorOfSiteId === site.id);
+  const isMirrorSide = Boolean(site.metadata.mirrorOfSiteId);
+  const pairedSiteIds = new Set(state.sites.flatMap((item) => (item.metadata.mirrorOfSiteId ? [item.id, item.metadata.mirrorOfSiteId] : [])));
+  const mirrorCandidates = state.sites.filter((item) => item.id !== site.id && !pairedSiteIds.has(item.id));
+
   const previewOrigin = process.env.PREVIEW_ORIGIN ?? "http://localhost:3001";
+
+  const homepage = state.pages.find((page) => page.siteId === site.id && page.route === "/" && !page.deletedAt);
+  const favicon = await (async () => {
+    if (!homepage) return undefined;
+    try {
+      const html = await fs.readFile(path.join(site.repoPath, homepage.filePath), "utf8");
+      const href = extractFaviconHref(html);
+      return href ? resolveAssetRef(href, homepage.filePath, site.slug) : undefined;
+    } catch {
+      return undefined;
+    }
+  })();
 
   const headRevisionNumber = revisions[0]?.revisionNumber ?? 0;
   const productionRevision = site.productionRevisionId
@@ -478,6 +516,137 @@ export default async function SiteDetailPage({
             Save settings
           </button>
         </form>
+      </div>
+
+      <div className="card settings-card" style={{ marginBottom: 28, maxWidth: 640 }}>
+        <div className="settings-card-header">
+          <h2>Favicon</h2>
+        </div>
+        <div style={{ padding: 20, display: "grid", gap: 10 }}>
+          {faviconUpdated ? (
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--accent)" }}>
+              Updated on {faviconUpdated} page{faviconUpdated === "1" ? "" : "s"}.
+              {faviconSkipped ? ` ${faviconSkipped} page${faviconSkipped === "1" ? "" : "s"} skipped (multiple icon links already present).` : ""}
+            </p>
+          ) : null}
+          {faviconError ? <p style={{ margin: 0, fontSize: 12.5, color: "var(--warn)" }}>{faviconError}</p> : null}
+
+          <form
+            method="post"
+            action={`/api/sites/${site.id}/favicon`}
+            encType="multipart/form-data"
+            style={{ display: "flex", gap: 14, alignItems: "center" }}
+          >
+            {favicon ? (
+              favicon.kind === "absolute" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={favicon.url} alt="" width={32} height={32} style={{ borderRadius: 4, flexShrink: 0, border: "1px solid var(--line)" }} />
+              ) : (
+                <PreviewImage
+                  originFallback={previewOrigin}
+                  path={favicon.path}
+                  alt=""
+                  width={32}
+                  height={32}
+                  style={{ borderRadius: 4, flexShrink: 0, border: "1px solid var(--line)" }}
+                />
+              )
+            ) : (
+              <span
+                aria-hidden
+                style={{ width: 32, height: 32, borderRadius: 4, background: "var(--bg)", border: "1px solid var(--line)", flexShrink: 0 }}
+              />
+            )}
+            <input type="file" name="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" required style={{ flex: 1 }} />
+            <button className="button" type="submit" style={{ flexShrink: 0 }}>
+              {favicon ? "Replace" : "Upload"}
+            </button>
+          </form>
+          <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+            Applies to every page on this site in one revision.
+          </p>
+        </div>
+      </div>
+
+      <div className="card settings-card" style={{ marginBottom: 28, maxWidth: 640 }}>
+        <div className="settings-card-header">
+          <h2>Mirroring</h2>
+        </div>
+        <div style={{ padding: 20, display: "grid", gap: 10 }}>
+          {mirrored ? (
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--accent)" }}>Connected — copied {mirrored} page{mirrored === "1" ? "" : "s"}.</p>
+          ) : null}
+          {mirrorSynced ? (
+            <p style={{ margin: 0, fontSize: 12.5, color: "var(--accent)" }}>Re-synced — copied {mirrorSynced} page{mirrorSynced === "1" ? "" : "s"}.</p>
+          ) : null}
+          {mirrorDisconnected ? <p style={{ margin: 0, fontSize: 12.5, color: "var(--accent)" }}>Mirror pairing disconnected.</p> : null}
+          {mirrorError ? <p style={{ margin: 0, fontSize: 12.5, color: "var(--warn)" }}>{mirrorError}</p> : null}
+
+          {mirrorPartner ? (
+            <>
+              <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+                {isMirrorSide ? (
+                  <>
+                    Full copy of{" "}
+                    <Link href={`/sites/${mirrorPartner.id}`} style={{ color: "var(--accent)" }}>
+                      {mirrorPartner.metadata.name}
+                    </Link>
+                    . Deploying either site deploys both, and each page gets hreflang tags linking the two domains.
+                  </>
+                ) : (
+                  <>
+                    Mirrored by{" "}
+                    <Link href={`/sites/${mirrorPartner.id}`} style={{ color: "var(--accent)" }}>
+                      {mirrorPartner.metadata.name}
+                    </Link>
+                    , which holds the copy. Deploying either site deploys both.
+                  </>
+                )}
+              </p>
+              <div style={{ display: "flex", gap: 10 }}>
+                {isMirrorSide ? (
+                  <form method="post" action={`/api/sites/${site.id}/mirror/resync`}>
+                    <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>
+                      Re-sync from {mirrorPartner.metadata.name}
+                    </button>
+                  </form>
+                ) : null}
+                <form method="post" action={`/api/sites/${site.id}/mirror/disconnect`}>
+                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                    Disconnect
+                  </button>
+                </form>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                Makes this site a full copy of another site&apos;s pages — replacing whatever is currently here. Set this
+                site&apos;s domain, canonical URLs and language/GEO independently afterward; deploying either site then
+                deploys both and links the two domains with hreflang.
+              </p>
+              {mirrorCandidates.length > 0 ? (
+                <form method="post" action={`/api/sites/${site.id}/mirror`} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <select name="sourceSiteId" required defaultValue="" style={{ flex: 1 }}>
+                    <option value="" disabled>
+                      Copy content from…
+                    </option>
+                    {mirrorCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.metadata.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="button" type="submit" style={{ flexShrink: 0 }}>
+                    Connect &amp; copy now
+                  </button>
+                </form>
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>No other unpaired sites to mirror from yet.</p>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <details className="card" style={{ marginBottom: 28, maxWidth: 640 }}>

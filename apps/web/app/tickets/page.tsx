@@ -45,7 +45,7 @@ export default async function TicketsPage({
       <div className="toolbar">
         <div>
           <h1>Tickets</h1>
-          <p className="muted">Tasks for developers, designers, SEO and copywriters. {openTickets.length} open.</p>
+          <p className="muted">{openTickets.length} open.</p>
         </div>
       </div>
 

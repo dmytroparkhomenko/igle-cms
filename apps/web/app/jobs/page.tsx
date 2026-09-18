@@ -8,7 +8,6 @@ export default async function JobsPage() {
       <div className="toolbar">
         <div>
           <h1>Jobs</h1>
-          <p className="muted">Background work and progress events.</p>
         </div>
       </div>
       <section className="grid">

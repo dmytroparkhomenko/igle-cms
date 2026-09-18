@@ -1,7 +1,7 @@
 import path from "node:path";
 import { buildSite, type BuildIssue } from "@igle/build";
 import { AaPanelProvider, LocalReleaseDeploymentProvider, type AaPanelDnsCheck, type AaPanelSiteSummary } from "@igle/deployer";
-import { assertCan, IgleError, type Actor } from "@igle/shared";
+import { assertCan, effectiveSiteLanguageTag, IgleError, type Actor } from "@igle/shared";
 import { RevisionService } from "./revision-service.js";
 import { ServerService } from "./server-service.js";
 import { JsonStateStore, id } from "./state-store.js";
@@ -65,22 +65,59 @@ export class DeployService {
     return server;
   }
 
-  async deploy(site: SiteRecord, actor: Actor): Promise<DeploymentRecord> {
+  /**
+   * Deploys `site`, then — if it's half of a mirror pair (see MirrorService) — deploys the
+   * paired site too, so the two stay published together the way "full copy" mirroring implies.
+   * The partner's own deploy settings (server, restricted-server access, domain) are still
+   * enforced independently; a partner failure is reported alongside the primary result rather
+   * than failing it, so an unrelated problem on one side can't block deploying the other.
+   */
+  async deploy(site: SiteRecord, actor: Actor): Promise<{ deployment: DeploymentRecord; mirror?: { site: SiteRecord; deployment?: DeploymentRecord; error?: string } }> {
     assertCan(actor, "sites.deploy", site.id);
+    const deployment = await this.deployOne(site, actor);
+
+    const partner = await this.findMirrorPartner(site);
+    if (!partner) return { deployment };
+
+    try {
+      assertCan(actor, "sites.deploy", partner.id);
+      const mirrorDeployment = await this.deployOne(partner, actor);
+      return { deployment, mirror: { site: partner, deployment: mirrorDeployment } };
+    } catch (error) {
+      return { deployment, mirror: { site: partner, error: error instanceof Error ? error.message : "Mirror deploy failed." } };
+    }
+  }
+
+  private async findMirrorPartner(site: SiteRecord): Promise<SiteRecord | undefined> {
+    const state = await this.stateStore.read();
+    if (site.metadata.mirrorOfSiteId) {
+      return state.sites.find((item) => item.id === site.metadata.mirrorOfSiteId);
+    }
+    return state.sites.find((item) => item.metadata.mirrorOfSiteId === site.id);
+  }
+
+  private async deployOne(site: SiteRecord, actor: Actor): Promise<DeploymentRecord> {
     const revision = await this.revisionService.latest(site.id);
     if (!revision) throw new IgleError("NO_REVISION", "This site has no revisions to deploy yet.", 400);
 
+    const partner = await this.findMirrorPartner(site);
+    const hreflangPartner =
+      partner && partner.metadata.domain
+        ? { baseUrl: productionBaseUrl(partner)!, languageTag: effectiveSiteLanguageTag(partner.metadata) }
+        : undefined;
+
     if (site.metadata.deploymentTarget === "aapanel") {
       const server = await this.resolveServerForDeploy(site, actor);
-      return this.deployToAaPanel(site, revision, server, actor);
+      return this.deployToAaPanel(site, revision, server, actor, hreflangPartner);
     }
-    return this.deployLocally(site, revision, actor);
+    return this.deployLocally(site, revision, actor, hreflangPartner);
   }
 
   private async deployLocally(
     site: SiteRecord,
     revision: SiteRevisionRecord,
-    actor: Actor
+    actor: Actor,
+    hreflangPartner?: { baseUrl: string; languageTag: string }
   ): Promise<DeploymentRecord> {
     const buildsRoot = path.join(this.dataDir, "builds");
     const baseUrl = productionBaseUrl(site);
@@ -89,7 +126,8 @@ export class DeployService {
       repoPath: site.repoPath,
       commitSha: revision.commitSha,
       buildsRoot,
-      ...(baseUrl ? { productionBaseUrl: baseUrl } : {})
+      ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
+      ...(hreflangPartner ? { hreflangPartner } : {})
     });
 
     const buildIssues = summarizeIssues(result.issues);
@@ -150,7 +188,8 @@ export class DeployService {
     site: SiteRecord,
     revision: SiteRevisionRecord,
     server: ServerRecord,
-    actor: Actor
+    actor: Actor,
+    hreflangPartner?: { baseUrl: string; languageTag: string }
   ): Promise<DeploymentRecord> {
     if (!site.metadata.domain) {
       throw new IgleError("DOMAIN_REQUIRED", "Set a domain in this site's settings before deploying to a VPS.", 400);
@@ -164,7 +203,8 @@ export class DeployService {
       repoPath: site.repoPath,
       commitSha: revision.commitSha,
       buildsRoot,
-      ...(baseUrl ? { productionBaseUrl: baseUrl } : {})
+      ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
+      ...(hreflangPartner ? { hreflangPartner } : {})
     });
 
     const buildIssues = summarizeIssues(result.issues);
