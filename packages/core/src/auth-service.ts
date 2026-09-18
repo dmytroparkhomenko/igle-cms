@@ -7,6 +7,7 @@ import type { UserRecord } from "./types.js";
 
 const TOTP_ISSUER = "Igle CMS";
 const PENDING_TWO_FACTOR_TTL_MS = 5 * 60 * 1000;
+const SETUP_TWO_FACTOR_TTL_MS = 15 * 60 * 1000;
 const MAX_TWO_FACTOR_ATTEMPTS = 5;
 
 /** The otpauth:// URI for a user's (pending or active) secret — what a QR code needs to encode so an authenticator app can pick it up. */
@@ -46,6 +47,7 @@ export interface TeamMemberSummary {
   name: string;
   role: "administrator" | "editor";
   canDeployRestricted: boolean;
+  twoFactorEnabled: boolean;
   createdAt: string;
   lockedUntil?: string | undefined;
 }
@@ -99,6 +101,7 @@ export class AuthService {
         name: user.name,
         role: user.role,
         canDeployRestricted: user.canDeployRestricted,
+        twoFactorEnabled: user.twoFactorEnabled,
         createdAt: user.createdAt,
         lockedUntil: user.lockedUntil
       }))
@@ -210,15 +213,18 @@ export class AuthService {
   }
 
   /**
-   * Checks email+password. If the account has 2FA enabled, this deliberately stops short of
-   * creating a real session — the password alone was never meant to be enough — and instead
-   * returns a short-lived pending token the caller can exchange for a session once the correct
-   * code comes back through verifyTwoFactorAndCreateSession.
+   * Checks email+password — always the SAME shared password, per account, no individual resets.
+   * Two-factor is mandatory for every account, so this never creates a session directly: it
+   * always returns a short-lived pending token instead. If the account has never completed 2FA
+   * setup yet, a secret is generated right here (reusing one already in progress rather than
+   * replacing it, so the QR code doesn't change between attempts) — the caller shows either "enter
+   * your code" or "scan this QR code" based on setupRequired, but either way the code is checked
+   * by the same verifyTwoFactorAndCreateSession.
    */
   async createSession(
     email: string,
     password: string
-  ): Promise<{ sessionId?: string; pendingTwoFactorToken?: string; requiresTwoFactor: boolean }> {
+  ): Promise<{ pendingTwoFactorToken: string; setupRequired: boolean }> {
     const state = await this.stateStore.read();
     const user = state.users.find((item) => item.email.toLowerCase() === email.toLowerCase());
     if (!user) throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
@@ -235,29 +241,44 @@ export class AuthService {
     user.failedLoginWindowStartedAt = undefined;
     state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => new Date(item.expiresAt).getTime() > Date.now());
 
-    if (user.twoFactorEnabled && user.twoFactorSecret) {
-      const token = id("2fa");
-      state.pendingTwoFactor.push({
-        id: token,
-        userId: user.id,
-        expiresAt: new Date(Date.now() + PENDING_TWO_FACTOR_TTL_MS).toISOString(),
-        attempts: 0
-      });
-      await this.stateStore.write(state);
-      return { pendingTwoFactorToken: token, requiresTwoFactor: true };
+    const setupRequired = !user.twoFactorEnabled;
+    if (!user.twoFactorSecret) {
+      user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
     }
 
-    const sessionId = id("sess");
-    state.sessions.push({
-      id: sessionId,
+    const token = id("2fa");
+    state.pendingTwoFactor.push({
+      id: token,
       userId: user.id,
-      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      expiresAt: new Date(Date.now() + (setupRequired ? SETUP_TWO_FACTOR_TTL_MS : PENDING_TWO_FACTOR_TTL_MS)).toISOString(),
+      attempts: 0
     });
     await this.stateStore.write(state);
-    return { sessionId, requiresTwoFactor: false };
+    return { pendingTwoFactorToken: token, setupRequired };
   }
 
-  /** The second step of a 2FA login: exchanges a valid pending token + correct code for a real session. Wrong codes count against a per-token attempt limit rather than the account-wide login lockout, since the password already checked out. */
+  /** Read-only lookup for the login-verify/setup page: which account a pending token belongs to, and whether it still needs the QR-code setup step or just a code from an already-configured app. Safe to call with no Actor — the pending token itself is what proves the password already checked out. */
+  async getPendingTwoFactorContext(pendingToken: string): Promise<{ email: string; setupRequired: boolean; otpauthUrl?: string } | undefined> {
+    const state = await this.stateStore.read();
+    const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
+    if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) return undefined;
+    const user = state.users.find((item) => item.id === pending.userId);
+    if (!user || !user.twoFactorSecret) return undefined;
+    const setupRequired = !user.twoFactorEnabled;
+    return {
+      email: user.email,
+      setupRequired,
+      ...(setupRequired ? { otpauthUrl: buildTotp(user.email, user.twoFactorSecret).toString() } : {})
+    };
+  }
+
+  /**
+   * Exchanges a valid pending token + correct code for a real session — the one path that covers
+   * both "enter your existing code" and "confirm the code from the QR code you just scanned"
+   * (first-time setup), since the check is identical either way: if the account hadn't completed
+   * setup yet, this is also the moment it does. Wrong codes count against a per-token attempt
+   * limit rather than the account-wide login lockout, since the password already checked out.
+   */
   async verifyTwoFactorAndCreateSession(pendingToken: string, code: string): Promise<{ sessionId: string }> {
     const state = await this.stateStore.read();
     const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
@@ -267,7 +288,7 @@ export class AuthService {
       throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
     }
     const user = state.users.find((item) => item.id === pending.userId);
-    if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) {
+    if (!user || !user.twoFactorSecret) {
       state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
       await this.stateStore.write(state);
       throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
@@ -284,6 +305,7 @@ export class AuthService {
       throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
     }
 
+    user.twoFactorEnabled = true;
     state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
     const sessionId = id("sess");
     state.sessions.push({
@@ -333,6 +355,22 @@ export class AuthService {
         record.twoFactorEnabled = false;
         record.twoFactorSecret = undefined;
       }
+    });
+  }
+
+  /**
+   * Admin-only recovery path: clears another user's 2FA secret outright, no code required —
+   * for when someone lost the device their authenticator app was on (disableTotp can't help
+   * there, since it requires a currently-valid code from that same lost device). Their next
+   * login is routed back through mandatory setup, same as a brand-new account.
+   */
+  async adminResetTwoFactor(userId: string, actor: Actor): Promise<void> {
+    assertCan(actor, "users.manage");
+    await this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === userId);
+      if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+      user.twoFactorEnabled = false;
+      user.twoFactorSecret = undefined;
     });
   }
 

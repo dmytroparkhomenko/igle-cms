@@ -14,8 +14,9 @@ export async function POST(request: Request) {
     const baseUrl = String(form.get("baseUrl") ?? "").trim();
     const apiKey = String(form.get("apiKey") ?? "").trim();
     const restricted = form.get("restricted") === "on";
+    const publicIp = String(form.get("publicIp") ?? "").trim();
 
-    await runtime.serverService.add({ name, baseUrl, apiKey, restricted }, actor);
+    await runtime.serverService.add({ name, baseUrl, apiKey, restricted, ...(publicIp ? { publicIp } : {}) }, actor);
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL("/servers?added=1", resolveRequestOrigin(request)), { status: 303 });

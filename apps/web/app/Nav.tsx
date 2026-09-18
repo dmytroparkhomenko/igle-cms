@@ -13,10 +13,12 @@ const links = [
   { href: "/jobs", label: "Jobs" },
   { href: "/team", label: "Team" },
   { href: "/servers", label: "Servers" },
+  { href: "/domains", label: "Domains" },
+  { href: "/cloudflare-accounts", label: "Cloudflare" },
   { href: "/settings", label: "Settings" }
 ];
 
-const adminOnly = new Set(["/team", "/servers"]);
+const adminOnly = new Set(["/team", "/servers", "/domains", "/cloudflare-accounts"]);
 
 export function Nav({ showTeam }: { showTeam: boolean }) {
   const pathname = usePathname();

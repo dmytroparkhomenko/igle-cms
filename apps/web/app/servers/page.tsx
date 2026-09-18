@@ -84,6 +84,14 @@ export default async function ServersPage({
             <label htmlFor="apiKey">API key</label>
             <input type="password" id="apiKey" name="apiKey" autoComplete="off" required />
           </div>
+          <div className="field">
+            <label htmlFor="publicIp">Public IP (for DNS)</label>
+            <input type="text" id="publicIp" name="publicIp" placeholder="Auto-detected from the base URL if left blank" />
+            <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+              What a domain&apos;s DNS record should point at to reach this server — used when connecting a domain on the
+              Domains screen. Only needed if it differs from the base URL&apos;s own address.
+            </p>
+          </div>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input type="checkbox" name="restricted" />
             Restricted — only administrators granted access can deploy here
@@ -104,6 +112,7 @@ export default async function ServersPage({
               </h3>
               <p className="muted">
                 {server.baseUrl} · key {server.apiKeyPreview} · {server.siteCount} site{server.siteCount === 1 ? "" : "s"}
+                {server.publicIp ? ` · DNS target ${server.publicIp}` : " · no public IP set for DNS"}
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

@@ -93,6 +93,8 @@ export interface CoreState {
   tickets: TicketRecord[];
   deployments: DeploymentRecord[];
   servers: ServerRecord[];
+  cloudflareAccounts: CloudflareAccountRecord[];
+  domains: DomainRecord[];
   /** Bridges the password step and the code step of a two-factor login — created once the password checks out, consumed (or expired) before a real session ever exists. */
   pendingTwoFactor: PendingTwoFactorRecord[];
   /** The one shared login password every registered team member's account is hashed against. */
@@ -129,7 +131,43 @@ export interface ServerRecord {
   baseUrl: string;
   apiKey: string;
   restricted: boolean;
+  /** The IP a domain's DNS record should point at to reach this server — auto-detected from baseUrl when it's a plain IP, but overridable since baseUrl is the aaPanel *panel* address and isn't always the same host. */
+  publicIp?: string | undefined;
   createdAt: string;
+}
+
+/** One Cloudflare account's credentials — kept separate per account (not per server) since the whole point is spreading domains across accounts that share no ownership signal. */
+export interface CloudflareAccountRecord {
+  id: string;
+  name: string;
+  apiToken: string;
+  /** Needed to create a zone when the token has access to more than one account; optional since a single-account token can omit it. */
+  accountId?: string | undefined;
+  createdAt: string;
+}
+
+export type DomainStatus =
+  | "pending_nameservers"
+  | "dns_configured"
+  | "ssl_active"
+  | "error";
+
+/** A domain connected through a Cloudflare account and pointed at a server — exists independently of any site, so a domain can be provisioned before a site is ready to go on it. */
+export interface DomainRecord {
+  id: string;
+  domain: string;
+  cloudflareAccountId: string;
+  serverId: string;
+  zoneId?: string | undefined;
+  nameservers?: string[] | undefined;
+  zoneActive: boolean;
+  dnsRecordId?: string | undefined;
+  sslMode?: "full" | "strict" | undefined;
+  status: DomainStatus;
+  lastError?: string | undefined;
+  siteId?: string | undefined;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface InviteRecord {

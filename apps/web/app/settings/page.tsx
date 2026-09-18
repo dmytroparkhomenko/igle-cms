@@ -38,8 +38,9 @@ export default async function SettingsPage({
       <section className="card" style={{ maxWidth: 480 }}>
         <h2 style={{ marginTop: 0 }}>Two-factor authentication</h2>
         <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
-          Once turned on, signing in to your account needs your password and a 6-digit code from an authenticator
-          app (Google Authenticator, Authy, 1Password, etc.) — the extra step applies only to your own account.
+          Required for every account — signing in always needs the shared password and a 6-digit code from an
+          authenticator app (Google Authenticator, Authy, 1Password, etc.), set up individually per person. Resetting
+          it here doesn&apos;t opt out — your next sign-in just walks you through setup again.
         </p>
 
         {twoFactorEnabled ? (
@@ -49,7 +50,7 @@ export default async function SettingsPage({
         ) : null}
         {twoFactorDisabled ? (
           <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 14 }}>
-            Two-factor authentication is off.
+            Reset — you&apos;ll set it up again the next time you sign in.
           </article>
         ) : null}
         {twoFactorError ? (
@@ -79,7 +80,7 @@ export default async function SettingsPage({
                 style={{ letterSpacing: "0.2em" }}
               />
               <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", justifySelf: "start" }}>
-                Turn off two-factor authentication
+                Reset — set it up again on next sign-in
               </button>
             </form>
           </>

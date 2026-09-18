@@ -14,6 +14,7 @@ export const capabilities = [
   "sites.preview",
   "sites.deploy",
   "servers.manage",
+  "domains.manage",
   "ai.configure",
   "ai.use",
   "integrations.configure",

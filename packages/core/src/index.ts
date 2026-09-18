@@ -1,5 +1,7 @@
 export * from "./auth-service.js";
+export * from "./cloudflare-account-service.js";
 export * from "./deploy-service.js";
+export * from "./domain-service.js";
 export * from "./draft-service.js";
 export * from "./import-service.js";
 export * from "./job-service.js";

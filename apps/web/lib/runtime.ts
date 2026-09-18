@@ -1,7 +1,9 @@
 import path from "node:path";
 import { AffiliateLinkService } from "../../../packages/core/src/affiliate-link-service";
 import { AuthService } from "../../../packages/core/src/auth-service";
+import { CloudflareAccountService } from "../../../packages/core/src/cloudflare-account-service";
 import { DeployService } from "../../../packages/core/src/deploy-service";
+import { DomainService } from "../../../packages/core/src/domain-service";
 import { DraftService } from "../../../packages/core/src/draft-service";
 import { ImportService } from "../../../packages/core/src/import-service";
 import { JobService } from "../../../packages/core/src/job-service";
@@ -34,6 +36,8 @@ const pageService = new PageService(stateStore, revisionService);
 const ticketService = new TicketService(stateStore);
 const serverService = new ServerService(stateStore);
 const deployService = new DeployService(dataDir, stateStore, revisionService, serverService);
+const cloudflareAccountService = new CloudflareAccountService(stateStore);
+const domainService = new DomainService(stateStore, cloudflareAccountService, serverService, siteService);
 const redirectService = new RedirectService(revisionService);
 const scriptService = new ScriptService(revisionService);
 const templateService = new TemplateService(templatesDir, customTemplatesDir, dataDir, stateStore, revisionService);
@@ -80,5 +84,7 @@ export const runtime = {
   templateService,
   verificationService,
   serverService,
-  affiliateLinkService
+  affiliateLinkService,
+  cloudflareAccountService,
+  domainService
 };

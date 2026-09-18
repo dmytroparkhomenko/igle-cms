@@ -19,6 +19,8 @@ export class JsonStateStore {
       state.servers ??= [];
       state.affiliateLinks ??= {};
       state.pendingTwoFactor ??= [];
+      state.cloudflareAccounts ??= [];
+      state.domains ??= [];
       // Migration: canDeployRestricted didn't exist before multi-server support — default
       // existing administrators to true (preserves what they could already do) and existing
       // editors to false, rather than silently locking everyone out of a server they already use.
@@ -41,7 +43,9 @@ export class JsonStateStore {
         deployments: [],
         servers: [],
         affiliateLinks: {},
-        pendingTwoFactor: []
+        pendingTwoFactor: [],
+        cloudflareAccounts: [],
+        domains: []
       };
     }
   }

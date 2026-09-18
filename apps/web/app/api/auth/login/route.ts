@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError } from "@igle/shared";
 import { runtime } from "../../../../lib/runtime";
-import { createPendingTwoFactorCookie, createSessionCookie, resolveRequestOrigin } from "../../../../lib/session";
+import { createPendingTwoFactorCookie, resolveRequestOrigin } from "../../../../lib/session";
 
 export async function POST(request: Request) {
   const accept = request.headers.get("accept") ?? "";
@@ -13,20 +13,12 @@ export async function POST(request: Request) {
     const password = String(form.get("password") ?? "");
 
     const result = await runtime.authService.createSession(email, password);
+    await createPendingTwoFactorCookie(result.pendingTwoFactorToken, request);
 
-    if (result.requiresTwoFactor && result.pendingTwoFactorToken) {
-      await createPendingTwoFactorCookie(result.pendingTwoFactorToken, request);
-      if (wantsRedirect) {
-        return NextResponse.redirect(new URL("/login/verify", resolveRequestOrigin(request)), { status: 303 });
-      }
-      return NextResponse.json({ ok: true, requiresTwoFactor: true });
-    }
-
-    await createSessionCookie(result.sessionId!, request);
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL("/", resolveRequestOrigin(request)), { status: 303 });
+      return NextResponse.redirect(new URL("/login/verify", resolveRequestOrigin(request)), { status: 303 });
     }
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, setupRequired: result.setupRequired });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {

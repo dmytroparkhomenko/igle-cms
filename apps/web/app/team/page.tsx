@@ -5,10 +5,10 @@ import { requireActorOrRedirect } from "../../lib/session";
 export default async function TeamPage({
   searchParams
 }: {
-  searchParams: Promise<{ error?: string; added?: string; updated?: string; removed?: string; passwordUpdated?: string }>;
+  searchParams: Promise<{ error?: string; added?: string; updated?: string; removed?: string; passwordUpdated?: string; twoFactorReset?: string }>;
 }) {
   const actor = await requireActorOrRedirect();
-  const { error, added, updated, removed, passwordUpdated } = await searchParams;
+  const { error, added, updated, removed, passwordUpdated, twoFactorReset } = await searchParams;
 
   let members: Awaited<ReturnType<typeof runtime.authService.listTeamMembers>> = [];
   let forbidden = false;
@@ -68,6 +68,12 @@ export default async function TeamPage({
       {passwordUpdated ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
           Team password updated — it now applies to every registered member.
+        </article>
+      ) : null}
+      {twoFactorReset ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
+          Two-factor authentication reset for <strong>{twoFactorReset}</strong> — they&apos;ll set it up again on their
+          next sign-in.
         </article>
       ) : null}
 
@@ -130,7 +136,17 @@ export default async function TeamPage({
             <div className="main">
               <h3>{member.name}</h3>
               <p className="muted">
-                {member.email} {member.canDeployRestricted ? <span className="status" style={{ marginLeft: 6, fontSize: 11 }}>Can deploy restricted</span> : null}
+                {member.email} {member.canDeployRestricted ? <span className="status" style={{ marginLeft: 6, fontSize: 11 }}>Can deploy restricted</span> : null}{" "}
+                <span
+                  className="badge"
+                  style={{
+                    marginLeft: 6,
+                    background: member.twoFactorEnabled ? "var(--accent)" : "var(--warn)",
+                    color: "#fff"
+                  }}
+                >
+                  {member.twoFactorEnabled ? "2FA set up" : "2FA not set up yet"}
+                </span>
               </p>
             </div>
             <form method="post" action={`/api/team/members/${member.id}/role`} style={{ display: "flex", gap: 6 }}>
@@ -159,6 +175,13 @@ export default async function TeamPage({
                 Save
               </button>
             </form>
+            {member.id !== actor.id && member.twoFactorEnabled ? (
+              <form method="post" action={`/api/team/members/${member.id}/reset-2fa`} style={{ marginLeft: 8 }}>
+                <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px" }}>
+                  Reset 2FA
+                </button>
+              </form>
+            ) : null}
             {member.id !== actor.id ? (
               <form method="post" action={`/api/team/members/${member.id}/remove`} style={{ marginLeft: 8 }}>
                 <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px" }}>
