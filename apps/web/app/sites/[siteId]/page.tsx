@@ -111,7 +111,8 @@ export default async function SiteDetailPage({
   const revisionsAhead = productionRevision
     ? headRevisionNumber - productionRevision.revisionNumber
     : 0;
-  const selectableServers = await runtime.serverService.listSelectable(actor);
+  const isPbnSite = site.metadata.category === "pbn";
+  const selectableServers = await runtime.serverService.listSelectable(actor, isPbnSite);
   const assignedServerId = site.metadata.serverId;
   const assignedServer = assignedServerId
     ? selectableServers.find((server) => server.id === assignedServerId)
@@ -124,10 +125,10 @@ export default async function SiteDetailPage({
     assignedServerId && aapanelDomain
       ? await Promise.all([
           runtime.deployService
-            .checkAaPanelDns(assignedServerId, actor, aapanelDomain)
+            .checkAaPanelDns(assignedServerId, actor, aapanelDomain, isPbnSite)
             .catch(() => null),
           runtime.deployService
-            .findExistingAaPanelSite(assignedServerId, actor, aapanelDomain)
+            .findExistingAaPanelSite(assignedServerId, actor, aapanelDomain, isPbnSite)
             .then((site_) => ({ ok: true as const, site: site_ }))
             .catch((error: unknown) => ({
               ok: false as const,
@@ -354,6 +355,16 @@ export default async function SiteDetailPage({
                 defaultValue={site.metadata.name}
                 required
               />
+            </div>
+            <div className="field">
+              <label htmlFor="category">Category</label>
+              <select id="category" name="category" defaultValue={site.metadata.category ?? "affiliate"}>
+                <option value="affiliate">Affiliate</option>
+                <option value="pbn">PBN</option>
+              </select>
+              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+                Which folder this site is grouped under on the Sites list.
+              </p>
             </div>
             <div className="field">
               <label>Domain</label>

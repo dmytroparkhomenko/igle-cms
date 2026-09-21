@@ -12,12 +12,26 @@ export async function POST(request: Request, context: { params: Promise<{ server
     const actor = await requireActor();
     const form = await request.formData();
     const name = String(form.get("name") ?? "").trim();
-    const baseUrl = String(form.get("baseUrl") ?? "").trim();
-    const apiKey = String(form.get("apiKey") ?? "").trim();
     const publicIp = String(form.get("publicIp") ?? "").trim();
     const restricted = form.get("restricted") === "on";
+    const sshPortRaw = String(form.get("sshPort") ?? "").trim();
 
-    await runtime.serverService.update(serverId, { name, baseUrl, apiKey, publicIp, restricted }, actor);
+    await runtime.serverService.update(
+      serverId,
+      {
+        name,
+        publicIp,
+        restricted,
+        baseUrl: String(form.get("baseUrl") ?? "").trim(),
+        apiKey: String(form.get("apiKey") ?? "").trim(),
+        sshHost: String(form.get("sshHost") ?? "").trim(),
+        ...(sshPortRaw ? { sshPort: Number(sshPortRaw) } : {}),
+        sshUsername: String(form.get("sshUsername") ?? "").trim(),
+        sshPassword: String(form.get("sshPassword") ?? "").trim(),
+        sshPrivateKey: String(form.get("sshPrivateKey") ?? "").trim()
+      },
+      actor
+    );
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL("/servers?updated=1", resolveRequestOrigin(request)), { status: 303 });

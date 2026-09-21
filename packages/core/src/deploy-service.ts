@@ -1,6 +1,15 @@
+import dns from "node:dns/promises";
 import path from "node:path";
 import { buildSite, type BuildIssue } from "@igle/build";
-import { AaPanelProvider, LocalReleaseDeploymentProvider, type AaPanelDnsCheck, type AaPanelSiteSummary } from "@igle/deployer";
+import {
+  AaPanelProvider,
+  CloudPanelProvider,
+  LocalReleaseDeploymentProvider,
+  type AaPanelConfig,
+  type AaPanelDnsCheck,
+  type AaPanelSiteSummary,
+  type CloudPanelConfig
+} from "@igle/deployer";
 import { assertCan, effectiveSiteLanguageTag, IgleError, type Actor } from "@igle/shared";
 import { RevisionService } from "./revision-service.js";
 import { ServerService } from "./server-service.js";
@@ -8,6 +17,28 @@ import { JsonStateStore, id } from "./state-store.js";
 import type { DeploymentRecord, ServerRecord, SiteRecord, SiteRevisionRecord } from "./types.js";
 
 const localProvider = new LocalReleaseDeploymentProvider();
+
+/** ServerService.add only ever persists an aaPanel server with these fields set — this just narrows the type at the point of use. */
+function aaPanelConfig(server: ServerRecord): AaPanelConfig {
+  if (!server.baseUrl || !server.apiKey) {
+    throw new IgleError("SERVER_MISCONFIGURED", `"${server.name}" is missing its aaPanel base URL or API key.`, 500);
+  }
+  return { baseUrl: server.baseUrl, apiKey: server.apiKey };
+}
+
+/** ServerService.add only ever persists a CloudPanel server with sshHost set and either a password or private key — this just narrows the type at the point of use. */
+function cloudPanelConfig(server: ServerRecord): CloudPanelConfig {
+  if (!server.sshHost) {
+    throw new IgleError("SERVER_MISCONFIGURED", `"${server.name}" is missing its SSH host.`, 500);
+  }
+  return {
+    host: server.sshHost,
+    port: server.sshPort,
+    username: server.sshUsername,
+    password: server.sshPassword,
+    privateKey: server.sshPrivateKey
+  };
+}
 
 export class DeployService {
   constructor(
@@ -27,39 +58,60 @@ export class DeployService {
     if (!server) {
       throw new IgleError("SERVER_NOT_FOUND", "This site's assigned server no longer exists — pick another one in Site Settings.", 400);
     }
-    if (server.restricted && !actor.canDeployRestricted) {
+    // The restricted-access gate is an affiliate-only concept — PBN sites can use any server.
+    if (server.restricted && !actor.canDeployRestricted && site.metadata.category !== "pbn") {
       throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can deploy to it.`, 403);
     }
     return server;
   }
 
-  async testAaPanelConnection(serverId: string, actor: Actor): Promise<{ ok: boolean; siteCount?: number; error?: string }> {
+  /** Works for either panel kind — CloudPanel has no equivalent to aaPanel's site-list API, so this is the only cross-kind connection check. */
+  async testServerConnection(serverId: string, actor: Actor): Promise<{ ok: boolean; siteCount?: number; error?: string }> {
     const server = await this.serverService.getInternal(serverId);
     if (!server) return { ok: false, error: "Server was not found." };
     if (server.restricted && !actor.canDeployRestricted) return { ok: false, error: "You don't have access to this restricted server." };
-    return new AaPanelProvider(server).testConnection();
+    if (server.kind === "cloudpanel") return new CloudPanelProvider(cloudPanelConfig(server)).testConnection();
+    return new AaPanelProvider(aaPanelConfig(server)).testConnection();
   }
 
-  async listAaPanelSites(serverId: string, actor: Actor, search?: string): Promise<AaPanelSiteSummary[]> {
-    const server = await this.requireSelectableServer(serverId, actor);
-    return new AaPanelProvider(server).listSites(search);
+  /** @deprecated use testServerConnection — kept as an alias so existing callers keep working. */
+  async testAaPanelConnection(serverId: string, actor: Actor): Promise<{ ok: boolean; siteCount?: number; error?: string }> {
+    return this.testServerConnection(serverId, actor);
   }
 
-  async findExistingAaPanelSite(serverId: string, actor: Actor, domain: string): Promise<AaPanelSiteSummary | undefined> {
+  /** aaPanel-only — CloudPanel has no documented way to list its existing sites (see CloudPanelProvider). Returns empty for a CloudPanel server rather than failing the caller. */
+  async listAaPanelSites(serverId: string, actor: Actor, search?: string, forPbn = false): Promise<AaPanelSiteSummary[]> {
+    const server = await this.requireSelectableServer(serverId, actor, forPbn);
+    if (server.kind !== "aapanel") return [];
+    return new AaPanelProvider(aaPanelConfig(server)).listSites(search);
+  }
+
+  async findExistingAaPanelSite(serverId: string, actor: Actor, domain: string, forPbn = false): Promise<AaPanelSiteSummary | undefined> {
     const server = await this.serverService.getInternal(serverId);
-    if (!server || (server.restricted && !actor.canDeployRestricted)) return undefined;
-    return new AaPanelProvider(server).findExistingSite(domain);
+    if (!server || (server.restricted && !actor.canDeployRestricted && !forPbn) || server.kind !== "aapanel") return undefined;
+    return new AaPanelProvider(aaPanelConfig(server)).findExistingSite(domain);
   }
 
-  async checkAaPanelDns(serverId: string, actor: Actor, domain: string): Promise<AaPanelDnsCheck> {
-    const server = await this.requireSelectableServer(serverId, actor);
-    return new AaPanelProvider(server).checkDomainDns(domain);
+  async checkAaPanelDns(serverId: string, actor: Actor, domain: string, forPbn = false): Promise<AaPanelDnsCheck> {
+    const server = await this.requireSelectableServer(serverId, actor, forPbn);
+    if (server.kind === "aapanel") return new AaPanelProvider(aaPanelConfig(server)).checkDomainDns(domain);
+
+    // CloudPanel has no API to ask directly, but the same "does this domain's DNS point here"
+    // check is just generic DNS resolution against the server's own known public IP.
+    const serverIps = server.publicIp ? [server.publicIp] : [];
+    try {
+      const resolvedIps = await dns.resolve4(domain);
+      return { resolvedIps, serverIps, matches: resolvedIps.some((ip) => serverIps.includes(ip)) };
+    } catch (error) {
+      return { resolvedIps: [], serverIps, matches: false, error: error instanceof Error ? error.message : "DNS lookup failed — no A record found." };
+    }
   }
 
-  private async requireSelectableServer(serverId: string, actor: Actor): Promise<ServerRecord> {
+  // The restricted-access gate is an affiliate-only concept — pass forPbn for a PBN site's server to skip it.
+  private async requireSelectableServer(serverId: string, actor: Actor, forPbn = false): Promise<ServerRecord> {
     const server = await this.serverService.getInternal(serverId);
     if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
-    if (server.restricted && !actor.canDeployRestricted) {
+    if (server.restricted && !actor.canDeployRestricted && !forPbn) {
       throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can use it.`, 403);
     }
     return server;
@@ -108,6 +160,7 @@ export class DeployService {
 
     if (site.metadata.deploymentTarget === "aapanel") {
       const server = await this.resolveServerForDeploy(site, actor);
+      if (server.kind === "cloudpanel") return this.deployToCloudPanel(site, revision, server, actor, hreflangPartner);
       return this.deployToAaPanel(site, revision, server, actor, hreflangPartner);
     }
     return this.deployLocally(site, revision, actor, hreflangPartner);
@@ -223,7 +276,7 @@ export class DeployService {
       });
     }
 
-    const provider = new AaPanelProvider(server);
+    const provider = new AaPanelProvider(aaPanelConfig(server));
     try {
       const { id: aapanelSiteId, documentRoot } = await provider.ensureSite(domain);
       await provider.deployBuild(result.buildPath, documentRoot);
@@ -276,6 +329,104 @@ export class DeployService {
         target: "aapanel",
         buildIssues,
         error: error instanceof Error ? error.message : "Deployment to aaPanel failed.",
+        createdByUserId: actor.id
+      });
+    }
+  }
+
+  /** Same shape as deployToAaPanel, but over SSH/clpctl instead of aaPanel's REST API — see CloudPanelProvider. */
+  private async deployToCloudPanel(
+    site: SiteRecord,
+    revision: SiteRevisionRecord,
+    server: ServerRecord,
+    actor: Actor,
+    hreflangPartner?: { baseUrl: string; languageTag: string }
+  ): Promise<DeploymentRecord> {
+    if (!site.metadata.domain) {
+      throw new IgleError("DOMAIN_REQUIRED", "Set a domain in this site's settings before deploying to a VPS.", 400);
+    }
+
+    const domain = site.metadata.domain;
+    const buildsRoot = path.join(this.dataDir, "builds");
+    const baseUrl = productionBaseUrl(site);
+    const result = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision.commitSha,
+      buildsRoot,
+      ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
+      ...(hreflangPartner ? { hreflangPartner } : {})
+    });
+
+    const buildIssues = summarizeIssues(result.issues);
+    const blockingErrors = result.issues.filter((issue) => issue.class === "error");
+    if (blockingErrors.length > 0) {
+      return this.recordDeployment({
+        siteId: site.id,
+        revisionId: revision.id,
+        revisionNumber: revision.revisionNumber,
+        kind: "deploy",
+        status: "failed",
+        target: "aapanel",
+        buildIssues,
+        error: `Build has ${blockingErrors.length} blocking issue(s): ${blockingErrors.map((issue) => issue.message).join("; ")}`,
+        createdByUserId: actor.id
+      });
+    }
+
+    const provider = new CloudPanelProvider(cloudPanelConfig(server));
+    try {
+      const cpSite = await provider.ensureSite(domain);
+      await provider.deployBuild(result.buildPath, cpSite);
+
+      let sslError: string | undefined;
+      if (site.metadata.https) {
+        const ssl = await provider.applySSL(domain);
+        if (!ssl.ok) sslError = ssl.error;
+      }
+
+      const smoke = await provider.smokeTest(domain, site.metadata.https && !sslError);
+      if (!smoke.ok) {
+        return this.recordDeployment({
+          siteId: site.id,
+          revisionId: revision.id,
+          revisionNumber: revision.revisionNumber,
+          kind: "deploy",
+          status: "failed",
+          target: "aapanel",
+          releasePath: `cloudpanel:${cpSite.documentRoot}`,
+          buildIssues,
+          error: `Files were uploaded but the live smoke test failed: ${smoke.failures.join("; ")}`,
+          ...(sslError ? { sslError } : {}),
+          createdByUserId: actor.id
+        });
+      }
+
+      const record = await this.recordDeployment({
+        siteId: site.id,
+        revisionId: revision.id,
+        revisionNumber: revision.revisionNumber,
+        kind: "deploy",
+        status: "success",
+        target: "aapanel",
+        releasePath: `cloudpanel:${cpSite.documentRoot}`,
+        buildIssues,
+        ...(sslError ? { sslError } : {}),
+        createdByUserId: actor.id
+      });
+
+      await this.setProductionRevision(site.id, revision.id);
+      return record;
+    } catch (error) {
+      return this.recordDeployment({
+        siteId: site.id,
+        revisionId: revision.id,
+        revisionNumber: revision.revisionNumber,
+        kind: "deploy",
+        status: "failed",
+        target: "aapanel",
+        buildIssues,
+        error: error instanceof Error ? error.message : "Deployment to CloudPanel failed.",
         createdByUserId: actor.id
       });
     }

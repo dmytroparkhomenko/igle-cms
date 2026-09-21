@@ -11,12 +11,27 @@ export async function POST(request: Request) {
     const actor = await requireActor();
     const form = await request.formData();
     const name = String(form.get("name") ?? "").trim();
-    const baseUrl = String(form.get("baseUrl") ?? "").trim();
-    const apiKey = String(form.get("apiKey") ?? "").trim();
+    const kind = String(form.get("kind") ?? "aapanel") === "cloudpanel" ? "cloudpanel" : "aapanel";
     const restricted = form.get("restricted") === "on";
     const publicIp = String(form.get("publicIp") ?? "").trim();
+    const sshPortRaw = String(form.get("sshPort") ?? "").trim();
 
-    await runtime.serverService.add({ name, baseUrl, apiKey, restricted, ...(publicIp ? { publicIp } : {}) }, actor);
+    await runtime.serverService.add(
+      {
+        name,
+        kind,
+        restricted,
+        ...(publicIp ? { publicIp } : {}),
+        baseUrl: String(form.get("baseUrl") ?? "").trim(),
+        apiKey: String(form.get("apiKey") ?? "").trim(),
+        sshHost: String(form.get("sshHost") ?? "").trim(),
+        ...(sshPortRaw ? { sshPort: Number(sshPortRaw) } : {}),
+        sshUsername: String(form.get("sshUsername") ?? "").trim(),
+        sshPassword: String(form.get("sshPassword") ?? "").trim(),
+        sshPrivateKey: String(form.get("sshPrivateKey") ?? "").trim()
+      },
+      actor
+    );
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL("/servers?added=1", resolveRequestOrigin(request)), { status: 303 });

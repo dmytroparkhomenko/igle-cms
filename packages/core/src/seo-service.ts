@@ -34,6 +34,7 @@ import {
 import { routeForFile } from "./import-service.js";
 import { readJson, readPagesMetadata, writeJson, writePagesMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { withSiteLock } from "./site-lock.js";
 import { JsonStateStore } from "./state-store.js";
 import type { PageIndexRecord, RevisionSource, SiteRecord } from "./types.js";
 
@@ -407,6 +408,22 @@ export class SEOService {
     source: RevisionSource = "visual-editor"
   ): Promise<{ revisionNumber: number; page: PageIndexRecord; updatedPageIds: string[] }> {
     assertCan(actor, "sites.edit", site.id);
+    return withSiteLock(site.id, () => this.applyVisualEditsLocked(site, pageId, patches, actor, source));
+  }
+
+  /**
+   * The actual work, serialized per site by applyVisualEdits — without this, two edits landing
+   * close together (e.g. replacing several images in a row) can race: both read the same "before"
+   * file, and whichever writes second silently overwrites the first's change, or their concurrent
+   * git commits collide. See site-lock.ts.
+   */
+  private async applyVisualEditsLocked(
+    site: SiteRecord,
+    pageId: string,
+    patches: StructuralPatch[],
+    actor: Actor,
+    source: RevisionSource
+  ): Promise<{ revisionNumber: number; page: PageIndexRecord; updatedPageIds: string[] }> {
     let page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (patches.length === 0) {

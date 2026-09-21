@@ -1,4 +1,4 @@
-import { AaPanelProvider, CloudflareProvider } from "@igle/deployer";
+import { AaPanelProvider, CloudflareProvider, CloudPanelProvider } from "@igle/deployer";
 import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { CloudflareAccountService } from "./cloudflare-account-service.js";
 import { ServerService } from "./server-service.js";
@@ -123,9 +123,28 @@ export class DomainService {
       throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can use it.`, 403);
     }
 
-    const aapanel = new AaPanelProvider(server);
-    const site = await aapanel.ensureSite(domain.domain);
-    const ssl = await aapanel.applySSL(domain.domain, site.id);
+    const ssl =
+      server.kind === "cloudpanel"
+        ? await (async () => {
+            if (!server.sshHost) throw new IgleError("SERVER_MISCONFIGURED", `"${server.name}" is missing its SSH host.`, 500);
+            const provider = new CloudPanelProvider({
+              host: server.sshHost,
+              port: server.sshPort,
+              username: server.sshUsername,
+              password: server.sshPassword,
+              privateKey: server.sshPrivateKey
+            });
+            const cpSite = await provider.ensureSite(domain.domain);
+            return provider.applySSL(cpSite.domain);
+          })()
+        : await (async () => {
+            if (!server.baseUrl || !server.apiKey) {
+              throw new IgleError("SERVER_MISCONFIGURED", `"${server.name}" is missing its aaPanel base URL or API key.`, 500);
+            }
+            const provider = new AaPanelProvider({ baseUrl: server.baseUrl, apiKey: server.apiKey });
+            const site = await provider.ensureSite(domain.domain);
+            return provider.applySSL(domain.domain, site.id);
+          })();
     if (!ssl.ok) {
       return this.updateDomain(domainId, (record) => {
         record.status = "error";

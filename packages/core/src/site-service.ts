@@ -23,6 +23,7 @@ export interface UpdateSiteSettingsInput {
   https?: boolean;
   language?: string;
   country?: string;
+  category?: SiteMetadata["category"];
   deploymentTarget?: SiteMetadata["deploymentTarget"];
   serverId?: string;
 }
@@ -57,6 +58,7 @@ export class SiteService {
       status: "draft",
       sourceType: "blank",
       starred: false,
+      category: "affiliate",
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
       sitemap: { enabled: true },
       robots: { mode: "cms-generated" },
@@ -187,6 +189,10 @@ export class SiteService {
       throw new IgleError("INVALID_COUNTRY", "Country must be a 2-letter ISO 3166-1 code, e.g. US.", 400, { country });
     }
 
+    // Settle the effective category before the server check below — a request can change both
+    // in the same submission, and the restricted-access gate is an affiliate-only concept.
+    const effectiveCategory = input.category ?? site.metadata.category;
+
     let nextServerId = site.metadata.serverId;
     if (input.serverId !== undefined) {
       const trimmedServerId = input.serverId.trim();
@@ -196,7 +202,7 @@ export class SiteService {
         const state = await this.stateStore.read();
         const server = state.servers.find((item) => item.id === trimmedServerId);
         if (!server) throw new IgleError("SERVER_NOT_FOUND", "That server was not found.", 404);
-        if (server.restricted && !actor.canDeployRestricted) {
+        if (server.restricted && !actor.canDeployRestricted && effectiveCategory !== "pbn") {
           throw new IgleError(
             "FORBIDDEN_RESTRICTED_SERVER",
             `"${server.name}" is a restricted server — only administrators granted access can move a site there.`,
@@ -219,6 +225,7 @@ export class SiteService {
       https: input.https ?? site.metadata.https,
       language: language ? language.toLowerCase() : site.metadata.language,
       country: country ? country.toUpperCase() : site.metadata.country,
+      category: effectiveCategory,
       deploymentTarget: input.deploymentTarget ?? site.metadata.deploymentTarget,
       ...(nextServerId ? { serverId: nextServerId } : {}),
       updatedAt: new Date().toISOString()

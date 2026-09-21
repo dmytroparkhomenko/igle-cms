@@ -20,6 +20,7 @@ import { JsonStateStore } from "../../../packages/core/src/state-store";
 import { TemplateService } from "../../../packages/core/src/template-service";
 import { TicketService } from "../../../packages/core/src/ticket-service";
 import { VerificationService } from "../../../packages/core/src/verification-service";
+import { VultrAccountService } from "../../../packages/core/src/vultr-account-service";
 
 const dataDir = process.env.IGLE_DATA_DIR ?? path.resolve(process.cwd(), "data");
 const templatesDir = process.env.IGLE_TEMPLATES_DIR ?? path.resolve(process.cwd(), "../../templates");
@@ -45,6 +46,7 @@ const templateService = new TemplateService(templatesDir, customTemplatesDir, da
 const verificationService = new VerificationService(revisionService);
 const affiliateLinkService = new AffiliateLinkService(stateStore);
 const mirrorService = new MirrorService(stateStore, importService, revisionService);
+const vultrAccountService = new VultrAccountService(stateStore);
 
 // First-run bootstrap: with no users yet, ADMIN_EMAIL/ADMIN_PASSWORD (set once in .env) creates
 // the first administrator and seeds the shared team password. A no-op on every run after that.
@@ -89,5 +91,6 @@ export const runtime = {
   affiliateLinkService,
   cloudflareAccountService,
   domainService,
-  mirrorService
+  mirrorService,
+  vultrAccountService
 };

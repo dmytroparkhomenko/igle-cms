@@ -52,6 +52,14 @@ export default async function SitesPage({
       return a.metadata.name.localeCompare(b.metadata.name);
     });
 
+  // Two top-level "folders" — affiliate sites vs. a private blog network — each sub-divided by
+  // GEO so a large batch of sites stays easy to scan. A mirror child always renders attached to
+  // its main site (see SITE-MIRROR-01) and doesn't get its own GEO grouping.
+  const categories: Array<{ key: "affiliate" | "pbn"; label: string }> = [
+    { key: "affiliate", label: "Affiliate Sites" },
+    { key: "pbn", label: "PBN Sites" }
+  ];
+
   return (
     <>
       <div className="toolbar">
@@ -92,42 +100,83 @@ export default async function SitesPage({
         </button>
       </form>
 
-      <div className="list">
-        {topLevelSites.map((site) => {
-          const child = mirrorChildBySource.get(site.id);
-          return (
-            <SiteRow
-              key={site.id}
-              site={site}
-              state={state}
-              favicon={favicons.get(site.id)}
-              previewOrigin={previewOrigin}
-              isChild={false}
-              mirrorLabel={child ? `Mirrored by ${child.metadata.name}` : undefined}
-            >
-              {child ? (
-                <SiteRow
-                  key={child.id}
-                  site={child}
-                  state={state}
-                  favicon={favicons.get(child.id)}
-                  previewOrigin={previewOrigin}
-                  isChild
-                  mirrorLabel={`Mirror of ${site.metadata.name}`}
-                />
-              ) : null}
-            </SiteRow>
-          );
-        })}
-        {sites.length === 0 ? (
+      {sites.length === 0 ? (
+        <div className="list">
           <div className="list-row">
             <div className="main">
               <h3>No sites yet</h3>
               <p className="muted">Launch one from a template, or upload a .zip above.</p>
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+      {sites.length > 0 && categories.map((category) => {
+        const categorySites = topLevelSites.filter((site) => (site.metadata.category ?? "affiliate") === category.key);
+
+        const geoGroups = new Map<string, SiteRecord[]>();
+        for (const site of categorySites) {
+          const geo = site.metadata.country?.toUpperCase() || "No GEO set";
+          const group = geoGroups.get(geo);
+          if (group) group.push(site);
+          else geoGroups.set(geo, [site]);
+        }
+        const geoKeys = [...geoGroups.keys()].sort((a, b) => {
+          if (a === "No GEO set") return 1;
+          if (b === "No GEO set") return -1;
+          return a.localeCompare(b);
+        });
+
+        return (
+          <section key={category.key} style={{ marginBottom: 32 }}>
+            <h2 style={{ marginBottom: 12 }}>
+              {category.label} <span className="muted">({categorySites.length})</span>
+            </h2>
+            {categorySites.length === 0 ? (
+              <div className="list">
+                <div className="list-row">
+                  <p className="muted" style={{ margin: 0 }}>No sites in this folder yet.</p>
+                </div>
+              </div>
+            ) : (
+              geoKeys.map((geo) => (
+                <div key={geo} style={{ marginBottom: 16 }}>
+                  <h3 className="muted" style={{ fontSize: 12.5, textTransform: "uppercase", letterSpacing: "0.04em", margin: "0 0 8px" }}>
+                    {geo} <span>({geoGroups.get(geo)!.length})</span>
+                  </h3>
+                  <div className="list">
+                    {geoGroups.get(geo)!.map((site) => {
+                      const child = mirrorChildBySource.get(site.id);
+                      return (
+                        <SiteRow
+                          key={site.id}
+                          site={site}
+                          state={state}
+                          favicon={favicons.get(site.id)}
+                          previewOrigin={previewOrigin}
+                          isChild={false}
+                          mirrorLabel={child ? `Mirrored by ${child.metadata.name}` : undefined}
+                        >
+                          {child ? (
+                            <SiteRow
+                              key={child.id}
+                              site={child}
+                              state={state}
+                              favicon={favicons.get(child.id)}
+                              previewOrigin={previewOrigin}
+                              isChild
+                              mirrorLabel={`Mirror of ${site.metadata.name}`}
+                            />
+                          ) : null}
+                        </SiteRow>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </section>
+        );
+      })}
     </>
   );
 }

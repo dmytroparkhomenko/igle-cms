@@ -94,6 +94,7 @@ export interface CoreState {
   deployments: DeploymentRecord[];
   servers: ServerRecord[];
   cloudflareAccounts: CloudflareAccountRecord[];
+  vultrAccounts: VultrAccountRecord[];
   domains: DomainRecord[];
   /** Bridges the password step and the code step of a two-factor login — created once the password checks out, consumed (or expired) before a real session ever exists. */
   pendingTwoFactor: PendingTwoFactorRecord[];
@@ -127,13 +128,24 @@ export interface UserRecord {
 }
 
 /** A registered VPS (aaPanel) a site can deploy to. `restricted` servers require canDeployRestricted on the actor. */
+export type ServerKind = "aapanel" | "cloudpanel";
+
 export interface ServerRecord {
   id: string;
   name: string;
-  baseUrl: string;
-  apiKey: string;
+  /** Which control panel (if any) manages sites on this box — determines which fields below apply and which deploy provider DeployService/DomainService reach for. */
+  kind: ServerKind;
+  // aaPanel: reached over its own REST API.
+  baseUrl?: string | undefined;
+  apiKey?: string | undefined;
+  // CloudPanel: has no REST API, so it's reached over SSH running its `clpctl` CLI instead.
+  sshHost?: string | undefined;
+  sshPort?: number | undefined;
+  sshUsername?: string | undefined;
+  sshPassword?: string | undefined;
+  sshPrivateKey?: string | undefined;
   restricted: boolean;
-  /** The IP a domain's DNS record should point at to reach this server — auto-detected from baseUrl when it's a plain IP, but overridable since baseUrl is the aaPanel *panel* address and isn't always the same host. */
+  /** The IP a domain's DNS record should point at to reach this server — auto-detected from baseUrl/sshHost when it's a plain IP, but overridable since that address isn't always the same host a domain should resolve to. */
   publicIp?: string | undefined;
   createdAt: string;
 }
@@ -145,6 +157,14 @@ export interface CloudflareAccountRecord {
   apiToken: string;
   /** Needed to create a zone when the token has access to more than one account; optional since a single-account token can omit it. */
   accountId?: string | undefined;
+  createdAt: string;
+}
+
+/** A registered Vultr account (Personal Access Token) — used only for read-only instance discovery, to help register a Vultr VPS as a Server without typing its IP by hand. See VultrProvider. */
+export interface VultrAccountRecord {
+  id: string;
+  name: string;
+  apiToken: string;
   createdAt: string;
 }
 

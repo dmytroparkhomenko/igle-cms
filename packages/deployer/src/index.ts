@@ -4,6 +4,8 @@ import path from "node:path";
 
 export * from "./aapanel-provider.js";
 export * from "./cloudflare-provider.js";
+export * from "./cloudpanel-provider.js";
+export * from "./vultr-provider.js";
 
 export interface DeploymentProvider {
   deploy(input: { buildPath: string; remoteDirectory: string; revisionId: string }): Promise<{ releasePath: string }>;

@@ -29,6 +29,8 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     if (language) settings.language = String(language);
     const country = form.get("country");
     if (country) settings.country = String(country);
+    const category = String(form.get("category") ?? "");
+    if (category === "affiliate" || category === "pbn") settings.category = category;
     const deploymentTarget = String(form.get("deploymentTarget") ?? "");
     if (deploymentTarget === "local" || deploymentTarget === "aapanel") settings.deploymentTarget = deploymentTarget;
     const serverIdRaw = form.get("serverId");

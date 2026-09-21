@@ -281,6 +281,21 @@ a.list-row:hover {
   display: block;
 }
 
+/* Same trick for the "Add a server" form: aaPanel needs a base URL + API key, CloudPanel needs
+   SSH connection details — shown/hidden live as the panel-type select changes. */
+.panel-kind-switch .field.kind-aapanel-field,
+.panel-kind-switch .field.kind-cloudpanel-field {
+  display: none;
+}
+
+.panel-kind-switch:has(#kind option[value="aapanel"]:checked) .field.kind-aapanel-field {
+  display: grid;
+}
+
+.panel-kind-switch:has(#kind option[value="cloudpanel"]:checked) .field.kind-cloudpanel-field {
+  display: grid;
+}
+
 .diff-view {
   margin: 0;
   padding: 10px 12px;

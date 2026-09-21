@@ -1,18 +1,38 @@
 import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { writeSiteMetadata } from "./metadata-store.js";
 import { JsonStateStore, id } from "./state-store.js";
-import type { ServerRecord } from "./types.js";
+import type { ServerKind, ServerRecord } from "./types.js";
 
 export interface ServerSummary {
   id: string;
   name: string;
-  baseUrl: string;
+  kind: ServerKind;
+  baseUrl?: string | undefined;
+  sshHost?: string | undefined;
+  sshPort?: number | undefined;
+  sshUsername?: string | undefined;
   restricted: boolean;
   publicIp?: string | undefined;
-  /** Never the raw key — last 4 characters only, for the admin to recognize which key is registered. */
-  apiKeyPreview: string;
+  /** Never the raw secret — last 4 characters only (aaPanel API key, or a hint that CloudPanel uses a private key), for the admin to recognize which credential is registered. */
+  credentialPreview: string;
   siteCount: number;
   createdAt: string;
+}
+
+export interface AddServerInput {
+  name: string;
+  kind: ServerKind;
+  restricted: boolean;
+  publicIp?: string | undefined;
+  // aaPanel
+  baseUrl?: string | undefined;
+  apiKey?: string | undefined;
+  // CloudPanel
+  sshHost?: string | undefined;
+  sshPort?: number | undefined;
+  sshUsername?: string | undefined;
+  sshPassword?: string | undefined;
+  sshPrivateKey?: string | undefined;
 }
 
 export class ServerService {
@@ -25,57 +45,90 @@ export class ServerService {
       .map((server) => ({
         id: server.id,
         name: server.name,
+        kind: server.kind,
         baseUrl: server.baseUrl,
+        sshHost: server.sshHost,
+        sshPort: server.sshPort,
+        sshUsername: server.sshUsername,
         restricted: server.restricted,
         publicIp: server.publicIp,
-        apiKeyPreview: maskKey(server.apiKey),
+        credentialPreview: credentialPreviewFor(server),
         siteCount: state.sites.filter((site) => site.metadata.serverId === server.id).length,
         createdAt: server.createdAt
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** For deploy-time / site-settings use — filters out servers the actor isn't allowed to touch if restricted. Never exposes the raw apiKey. */
-  async listSelectable(actor: Actor): Promise<Array<{ id: string; name: string; baseUrl: string; restricted: boolean }>> {
+  /**
+   * For deploy-time / site-settings use — filters out servers the actor isn't allowed to touch
+   * if restricted. Never exposes any credential.
+   *
+   * The restricted-access gate is an affiliate-only concept — pass `forPbn: true` (the site being
+   * configured is a PBN site) to include restricted servers regardless of the actor's own
+   * `canDeployRestricted` permission.
+   */
+  async listSelectable(actor: Actor, forPbn = false): Promise<Array<{ id: string; name: string; kind: ServerKind; restricted: boolean }>> {
     const state = await this.stateStore.read();
     return state.servers
-      .filter((server) => !server.restricted || actor.canDeployRestricted)
-      .map((server) => ({ id: server.id, name: server.name, baseUrl: server.baseUrl, restricted: server.restricted }))
+      .filter((server) => !server.restricted || actor.canDeployRestricted || forPbn)
+      .map((server) => ({ id: server.id, name: server.name, kind: server.kind, restricted: server.restricted }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** Internal use only (DeployService) — resolves the real record including the API key. No actor check; callers must already have verified deploy permission for the site. */
+  /** Internal use only (DeployService/DomainService) — resolves the real record including credentials. No actor check; callers must already have verified deploy permission for the site. */
   async getInternal(serverId: string): Promise<ServerRecord | undefined> {
     const state = await this.stateStore.read();
     return state.servers.find((server) => server.id === serverId);
   }
 
-  async add(
-    input: { name: string; baseUrl: string; apiKey: string; restricted: boolean; publicIp?: string },
-    actor: Actor
-  ): Promise<ServerRecord> {
+  async add(input: AddServerInput, actor: Actor): Promise<ServerRecord> {
     assertCan(actor, "servers.manage");
     const name = input.name.trim();
-    const baseUrl = input.baseUrl.trim().replace(/\/$/, "");
-    const apiKey = input.apiKey.trim();
     if (!name) throw new IgleError("VALIDATION_ERROR", "Server name is required.", 400);
-    if (!/^https?:\/\/.+/.test(baseUrl)) throw new IgleError("VALIDATION_ERROR", "Base URL must start with http:// or https://.", 400);
-    if (!apiKey) throw new IgleError("VALIDATION_ERROR", "API key is required.", 400);
-    const publicIp = input.publicIp?.trim() || detectIpFromBaseUrl(baseUrl);
 
-    const server: ServerRecord = {
-      id: id("server"),
-      name,
-      baseUrl,
-      apiKey,
-      restricted: input.restricted,
-      ...(publicIp ? { publicIp } : {}),
-      createdAt: new Date().toISOString()
-    };
+    let record: ServerRecord;
+    if (input.kind === "cloudpanel") {
+      const sshHost = input.sshHost?.trim();
+      if (!sshHost) throw new IgleError("VALIDATION_ERROR", "SSH host is required.", 400);
+      if (!input.sshPassword?.trim() && !input.sshPrivateKey?.trim()) {
+        throw new IgleError("VALIDATION_ERROR", "Provide either an SSH password or a private key.", 400);
+      }
+      const publicIp = input.publicIp?.trim() || (isPlainIp(sshHost) ? sshHost : undefined);
+      record = {
+        id: id("server"),
+        name,
+        kind: "cloudpanel",
+        sshHost,
+        sshPort: input.sshPort || 22,
+        sshUsername: input.sshUsername?.trim() || "root",
+        ...(input.sshPassword?.trim() ? { sshPassword: input.sshPassword.trim() } : {}),
+        ...(input.sshPrivateKey?.trim() ? { sshPrivateKey: input.sshPrivateKey.trim() } : {}),
+        restricted: input.restricted,
+        ...(publicIp ? { publicIp } : {}),
+        createdAt: new Date().toISOString()
+      };
+    } else {
+      const baseUrl = input.baseUrl?.trim().replace(/\/$/, "") ?? "";
+      const apiKey = input.apiKey?.trim() ?? "";
+      if (!/^https?:\/\/.+/.test(baseUrl)) throw new IgleError("VALIDATION_ERROR", "Base URL must start with http:// or https://.", 400);
+      if (!apiKey) throw new IgleError("VALIDATION_ERROR", "API key is required.", 400);
+      const publicIp = input.publicIp?.trim() || detectIpFromBaseUrl(baseUrl);
+      record = {
+        id: id("server"),
+        name,
+        kind: "aapanel",
+        baseUrl,
+        apiKey,
+        restricted: input.restricted,
+        ...(publicIp ? { publicIp } : {}),
+        createdAt: new Date().toISOString()
+      };
+    }
+
     await this.stateStore.update((state) => {
-      state.servers.push(server);
+      state.servers.push(record);
     });
-    return server;
+    return record;
   }
 
   /** Idempotent bootstrap for the legacy single-server env var config — creates a record only if none with this baseUrl exists yet. Called at startup, no actor available. */
@@ -85,7 +138,15 @@ export class ServerService {
     const existing = state.servers.find((server) => server.baseUrl === cleanBaseUrl);
     if (existing) return existing;
 
-    const server: ServerRecord = { id: id("server"), name, baseUrl: cleanBaseUrl, apiKey: apiKey.trim(), restricted: false, createdAt: new Date().toISOString() };
+    const server: ServerRecord = {
+      id: id("server"),
+      name,
+      kind: "aapanel",
+      baseUrl: cleanBaseUrl,
+      apiKey: apiKey.trim(),
+      restricted: false,
+      createdAt: new Date().toISOString()
+    };
     const backfilledRepoPaths: string[] = [];
     await this.stateStore.update((next) => {
       next.servers.push(server);
@@ -111,7 +172,18 @@ export class ServerService {
 
   async update(
     serverId: string,
-    input: { name?: string; baseUrl?: string; apiKey?: string; restricted?: boolean; publicIp?: string },
+    input: {
+      name?: string;
+      restricted?: boolean;
+      publicIp?: string;
+      baseUrl?: string;
+      apiKey?: string;
+      sshHost?: string;
+      sshPort?: number;
+      sshUsername?: string;
+      sshPassword?: string;
+      sshPrivateKey?: string;
+    },
     actor: Actor
   ): Promise<void> {
     assertCan(actor, "servers.manage");
@@ -119,10 +191,18 @@ export class ServerService {
       const server = state.servers.find((item) => item.id === serverId);
       if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
       if (input.name?.trim()) server.name = input.name.trim();
-      if (input.baseUrl?.trim()) server.baseUrl = input.baseUrl.trim().replace(/\/$/, "");
-      if (input.apiKey?.trim()) server.apiKey = input.apiKey.trim();
       if (input.restricted !== undefined) server.restricted = input.restricted;
       if (input.publicIp?.trim()) server.publicIp = input.publicIp.trim();
+      if (server.kind === "aapanel") {
+        if (input.baseUrl?.trim()) server.baseUrl = input.baseUrl.trim().replace(/\/$/, "");
+        if (input.apiKey?.trim()) server.apiKey = input.apiKey.trim();
+      } else {
+        if (input.sshHost?.trim()) server.sshHost = input.sshHost.trim();
+        if (input.sshPort) server.sshPort = input.sshPort;
+        if (input.sshUsername?.trim()) server.sshUsername = input.sshUsername.trim();
+        if (input.sshPassword?.trim()) server.sshPassword = input.sshPassword.trim();
+        if (input.sshPrivateKey?.trim()) server.sshPrivateKey = input.sshPrivateKey.trim();
+      }
     });
   }
 
@@ -139,16 +219,24 @@ export class ServerService {
   }
 }
 
-function maskKey(apiKey: string): string {
-  if (apiKey.length <= 4) return "••••";
-  return `••••${apiKey.slice(-4)}`;
+function credentialPreviewFor(server: ServerRecord): string {
+  if (server.kind === "cloudpanel") {
+    const auth = server.sshPassword ? "password" : server.sshPrivateKey ? "private key" : "no credential set";
+    return `${server.sshUsername ?? "root"}@${server.sshHost ?? "?"} (${auth})`;
+  }
+  const key = server.apiKey ?? "";
+  return key.length <= 4 ? "••••" : `••••${key.slice(-4)}`;
+}
+
+function isPlainIp(host: string): boolean {
+  return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 }
 
 /** baseUrl is the aaPanel *panel* address (often on a non-standard port) — when its host happens to be a plain IPv4 literal, that's usually also the server's real public IP, so it's a reasonable default for a domain's DNS record. Not reliable when the panel sits behind its own hostname; the admin can always override it. */
 function detectIpFromBaseUrl(baseUrl: string): string | undefined {
   try {
     const host = new URL(baseUrl).hostname;
-    return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ? host : undefined;
+    return isPlainIp(host) ? host : undefined;
   } catch {
     return undefined;
   }

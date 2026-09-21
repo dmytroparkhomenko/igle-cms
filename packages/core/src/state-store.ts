@@ -20,12 +20,17 @@ export class JsonStateStore {
       state.affiliateLinks ??= {};
       state.pendingTwoFactor ??= [];
       state.cloudflareAccounts ??= [];
+      state.vultrAccounts ??= [];
       state.domains ??= [];
       // Migration: canDeployRestricted didn't exist before multi-server support — default
       // existing administrators to true (preserves what they could already do) and existing
       // editors to false, rather than silently locking everyone out of a server they already use.
       for (const user of state.users) {
         user.canDeployRestricted ??= user.role === "administrator";
+      }
+      // Migration: every server was an aaPanel server before CloudPanel/Vultr support existed.
+      for (const server of state.servers) {
+        server.kind ??= "aapanel";
       }
       return state;
     } catch (error) {
@@ -45,6 +50,7 @@ export class JsonStateStore {
         affiliateLinks: {},
         pendingTwoFactor: [],
         cloudflareAccounts: [],
+        vultrAccounts: [],
         domains: []
       };
     }

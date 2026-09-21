@@ -43,6 +43,8 @@ export const siteMetadataSchema = z.object({
   mirrorOfSiteId: z.string().optional(),
   /** Pins a site to the top of the Sites list — purely organizational, not written to the repo's own site.json unless some other save happens to touch it. */
   starred: z.boolean().default(false),
+  /** Which "folder" a site belongs to on the Sites list — affiliate sites vs. a private blog network, kept visually and organizationally separate. */
+  category: z.enum(["affiliate", "pbn"]).default("affiliate"),
   seoLimits: seoLimitsSchema.default({
     titleMin: 30,
     titleMax: 60,

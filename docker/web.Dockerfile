@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS web
-RUN apk add --no-cache git zip
+RUN apk add --no-cache git zip python3 make g++
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 

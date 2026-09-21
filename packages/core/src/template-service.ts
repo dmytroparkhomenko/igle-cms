@@ -150,6 +150,7 @@ export class TemplateService {
       status: "draft",
       sourceType: "template",
       starred: false,
+      category: "affiliate",
       templateKey: manifest.key,
       templateVersion: manifest.version,
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
