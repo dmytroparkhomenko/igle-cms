@@ -484,6 +484,11 @@ export function absolutizeRelativeReferences(
  * `<picture>` (common for responsive/format-negotiated images — several real sites in this app
  * use exactly this pattern) updates the `<img>` but the visible, rendered image never changes,
  * since the browser keeps loading the untouched `<source>`.
+ *
+ * Also rewrites a matching `<link rel="preload" as="image" href="...">` — some real sites here
+ * preload their hero image this way for LCP. This one doesn't affect what's visibly rendered (the
+ * `<img>` swap alone does that), only the browser's fetch priority — but leaving it pointed at
+ * `oldSrc` wastes a preload fetch on an image the page no longer uses.
  */
 export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: string): { html: string; count: number } {
   const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
@@ -505,6 +510,15 @@ export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: 
     const range = attrValueRange(node, "srcset", html);
     if (!range) continue;
     ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "srcset", rewritten));
+    count += 1;
+  }
+  for (const node of findElements(document, "link")) {
+    if ((attr(node, "rel") ?? "").toLowerCase() !== "preload") continue;
+    if ((attr(node, "as") ?? "").toLowerCase() !== "image") continue;
+    if (attr(node, "href") !== oldSrc) continue;
+    const range = attrValueRange(node, "href", html);
+    if (!range) continue;
+    ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "href", newSrc));
     count += 1;
   }
   return { html: ms.toString(), count };

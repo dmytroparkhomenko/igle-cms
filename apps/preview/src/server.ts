@@ -171,6 +171,16 @@ const BRIDGE_SCRIPT = `(function () {
     };
   }
 
+  // Every site is served under /<siteSlug>/ here (see rewriteAbsolutePaths on the server side,
+  // which does the equivalent rewrite for HTML sent on a real page load). Derives the slug from
+  // this frame's own URL rather than needing it passed in some other way.
+  function withSitePrefix(value) {
+    if (!value || value.charAt(0) !== "/" || value.charAt(1) === "/") return value;
+    var segments = window.location.pathname.split("/");
+    var sitePrefix = segments.length > 1 && segments[1] ? "/" + segments[1] : "";
+    return sitePrefix + value;
+  }
+
   // Rewrites the URL of any srcset candidate exactly matching oldSrc, preserving each
   // candidate's width/pixel-density descriptor — same rule as the server-side rewrite.
   // Returns null (no-op) if nothing in the list matched.
@@ -277,23 +287,31 @@ const BRIDGE_SCRIPT = `(function () {
     if (msg.type === "setAttr") {
       var toSetAttr = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
       if (toSetAttr) {
+        var attrValue = msg.value;
         // A <picture>'s <source siblings> render instead of this <img> whenever one matches —
         // live-updating just the img's src would silently show no change at all. Mirrors the
         // same rewrite the server does when the edit is actually saved (see
         // replaceImageSrcEverywhere in @igle/html-engine), so the instant preview matches what
         // you'll see after clicking Save.
         if (msg.attrName === "src" && toSetAttr.tagName === "IMG") {
+          // A freshly-uploaded image's src is root-relative ("/media/x.png"). On a real page
+          // load the server prefixes that with "/<siteSlug>/" (see rewriteAbsolutePaths) since
+          // every site here is served under that prefix — but this DOM update never goes through
+          // the server, so it needs the same prefix applied here, or the browser resolves it
+          // against the preview origin's root and 404s (shows as a broken image until Save,
+          // which reloads the page for real).
+          attrValue = withSitePrefix(msg.value);
           var oldSrc = toSetAttr.getAttribute("src");
           var picture = toSetAttr.closest("picture");
           if (picture && oldSrc) {
             var sources = picture.querySelectorAll("source[srcset]");
             for (var i = 0; i < sources.length; i++) {
-              var rewritten = rewriteSrcsetForOldSrc(sources[i].getAttribute("srcset"), oldSrc, msg.value);
+              var rewritten = rewriteSrcsetForOldSrc(sources[i].getAttribute("srcset"), oldSrc, attrValue);
               if (rewritten !== null) sources[i].setAttribute("srcset", rewritten);
             }
           }
         }
-        toSetAttr.setAttribute(msg.attrName, msg.value);
+        toSetAttr.setAttribute(msg.attrName, attrValue);
       }
     }
 
