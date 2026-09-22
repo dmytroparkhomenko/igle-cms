@@ -9,6 +9,7 @@ import { ImportService } from "../../../packages/core/src/import-service";
 import { JobService } from "../../../packages/core/src/job-service";
 import { MediaService } from "../../../packages/core/src/media-service";
 import { MirrorService } from "../../../packages/core/src/mirror-service";
+import { NotificationService } from "../../../packages/core/src/notification-service";
 import { PageService } from "../../../packages/core/src/page-service";
 import { RedirectService } from "../../../packages/core/src/redirect-service";
 import { RevisionService } from "../../../packages/core/src/revision-service";
@@ -17,8 +18,8 @@ import { SEOService } from "../../../packages/core/src/seo-service";
 import { ServerService } from "../../../packages/core/src/server-service";
 import { SiteService } from "../../../packages/core/src/site-service";
 import { JsonStateStore } from "../../../packages/core/src/state-store";
+import { TaskService } from "../../../packages/core/src/task-service";
 import { TemplateService } from "../../../packages/core/src/template-service";
-import { TicketService } from "../../../packages/core/src/ticket-service";
 import { VerificationService } from "../../../packages/core/src/verification-service";
 import { VultrAccountService } from "../../../packages/core/src/vultr-account-service";
 
@@ -35,7 +36,8 @@ const draftService = new DraftService(stateStore);
 const jobService = new JobService(stateStore);
 const mediaService = new MediaService();
 const pageService = new PageService(stateStore, revisionService);
-const ticketService = new TicketService(stateStore);
+const taskService = new TaskService(dataDir, stateStore);
+const notificationService = new NotificationService(stateStore);
 const serverService = new ServerService(stateStore);
 const deployService = new DeployService(dataDir, stateStore, revisionService, serverService);
 const cloudflareAccountService = new CloudflareAccountService(stateStore);
@@ -81,7 +83,8 @@ export const runtime = {
   jobService,
   mediaService,
   pageService,
-  ticketService,
+  taskService,
+  notificationService,
   deployService,
   redirectService,
   scriptService,

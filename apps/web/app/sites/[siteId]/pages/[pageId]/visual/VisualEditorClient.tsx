@@ -92,6 +92,7 @@ export function VisualEditorClient({
   const [linkTarget, setLinkTarget] = useState<string>(CUSTOM_LINK_TARGET);
   const [reloadKey, setReloadKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   // The server bakes PREVIEW_ORIGIN from its own env var (typically "http://localhost:3001"),
   // which only resolves correctly if the browser happens to be on the same machine as the
@@ -347,6 +348,16 @@ export function VisualEditorClient({
                   {patches.length} unsaved change{patches.length === 1 ? "" : "s"}
                 </span>
               ) : null}
+              <button
+                type="button"
+                className="button"
+                style={{ background: "none", color: "var(--accent)", width: 26, height: 26, padding: 0, borderRadius: "50%" }}
+                onClick={() => setShowInfo(true)}
+                aria-label="How the visual editor works"
+                title="How the visual editor works"
+              >
+                ⓘ
+              </button>
               <button type="button" className="button" style={{ background: "none", color: "var(--accent)" }} onClick={toggleFullscreen}>
                 {isFullscreen ? "Exit full screen" : "Full screen"}
               </button>
@@ -377,20 +388,6 @@ export function VisualEditorClient({
                   <p className="muted" style={{ margin: 0, fontSize: 12.5, wordBreak: "break-all" }}>
                     {selected.src}
                   </p>
-                  <p
-                    className="muted"
-                    style={{
-                      margin: 0,
-                      fontSize: 11.5,
-                      background: "color-mix(in srgb, var(--accent) 8%, transparent)",
-                      border: "1px solid var(--accent)",
-                      borderRadius: 6,
-                      padding: "6px 8px"
-                    }}
-                  >
-                    Replacing this image updates it everywhere it appears — other spots on this page and every other
-                    page that uses the same image — when you click Save changes below.
-                  </p>
                   <label className="muted" style={{ fontSize: 12.5 }}>
                     Replace with a URL
                   </label>
@@ -415,9 +412,6 @@ export function VisualEditorClient({
                   <button className="button" type="button" onClick={startTextEdit}>
                     Edit text
                   </button>
-                  <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                    Click the highlighted text in the preview, then click away to commit.
-                  </p>
                 </>
               )}
 
@@ -444,8 +438,7 @@ export function VisualEditorClient({
                     />
                   ) : (
                     <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                      Links to this site's own <code>{pages.find((page) => page.id === linkTarget)?.route}</code> page
-                      — this stays correct no matter where the site is hosted.
+                      Links to <code>{pages.find((page) => page.id === linkTarget)?.route}</code>
                     </p>
                   )}
                 </div>
@@ -484,9 +477,6 @@ export function VisualEditorClient({
                   Remove block
                 </button>
               </div>
-              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                Neither takes effect until you click Save changes — discard any time before that.
-              </p>
 
               {selected.className ? (
                 <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
@@ -501,15 +491,6 @@ export function VisualEditorClient({
           <div style={{ display: "grid", gap: 8, marginTop: 16, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
             <p className="settings-section-title" style={{ margin: 0 }}>
               Site navigation
-            </p>
-            <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-              Edit the header or footer on this page (click into it above, like any other content), save, then sync it
-              to every other page. Or edit them as raw HTML on the{" "}
-              <a href={`/sites/${siteId}/header-footer`} style={{ color: "var(--accent)" }}>
-                Header/Footer
-              </a>{" "}
-              screen instead. To add a new link to the menu: click an existing nav link, Duplicate block, then select
-              the copy to edit its text and Links-to target.
             </p>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" className="button" style={{ fontSize: 12.5 }} onClick={() => syncNavigation("header")}>
@@ -539,6 +520,57 @@ export function VisualEditorClient({
           {status.kind === "error" ? <p style={{ color: "var(--warn)", fontSize: 12.5 }}>{status.message}</p> : null}
         </aside>
       </div>
+
+      {showInfo ? (
+        <div
+          className="deploy-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="How the visual editor works"
+          onClick={() => setShowInfo(false)}
+        >
+          <div className="editor-info-modal" onClick={(event) => event.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <h3 style={{ margin: 0 }}>How the visual editor works</h3>
+              <button
+                type="button"
+                className="button"
+                style={{ background: "none", color: "var(--muted)", padding: "2px 6px" }}
+                onClick={() => setShowInfo(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <dl>
+              <dt>Images</dt>
+              <dd>
+                Replacing an image updates it everywhere it appears — other spots on this page and every other page
+                that uses the same image — as soon as you click &quot;Use this image&quot;. The preview updates
+                immediately; nothing is saved until you click Save changes.
+              </dd>
+              <dt>Text</dt>
+              <dd>Click Edit text, then click the highlighted text in the preview and click away to commit it.</dd>
+              <dt>Links</dt>
+              <dd>Linking to one of this site&apos;s own pages stays correct no matter where the site ends up hosted.</dd>
+              <dt>Duplicate &amp; Remove block</dt>
+              <dd>Neither takes effect until you click Save changes — Discard any time before that.</dd>
+              <dt>Site navigation</dt>
+              <dd>
+                Edit the header or footer on this page (click into it above, like any other content), save, then sync
+                it to every other page. Or edit them as raw HTML on the{" "}
+                <a href={`/sites/${siteId}/header-footer`} style={{ color: "var(--accent)" }}>
+                  Header/Footer
+                </a>{" "}
+                screen instead. To add a new link to the menu: click an existing nav link, Duplicate block, then
+                select the copy to edit its text and Links-to target.
+              </dd>
+              <dt>Interactive mode</dt>
+              <dd>Runs the page&apos;s real scripts so you can click through it normally, but turns off editing — turn it off again to select and edit elements.</dd>
+            </dl>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

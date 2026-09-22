@@ -3,27 +3,27 @@ import { apiError } from "@igle/shared";
 import { runtime } from "../../../../../lib/runtime";
 import { requireActor, resolveRequestOrigin } from "../../../../../lib/session";
 
-export async function POST(request: Request, context: { params: Promise<{ ticketId: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ taskId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
   const wantsRedirect = accept.includes("text/html");
-  const { ticketId } = await context.params;
+  const { taskId } = await context.params;
 
   try {
     const actor = await requireActor();
     const form = await request.formData();
     const body = String(form.get("body") ?? "");
 
-    await runtime.ticketService.addComment(ticketId, actor, body);
+    await runtime.taskService.addComment(taskId, actor, body);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/tickets/${ticketId}?commented=1`, resolveRequestOrigin(request)), { status: 303 });
+      return NextResponse.redirect(new URL(`/tasks/${taskId}?commented=1`, resolveRequestOrigin(request)), { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
       return NextResponse.redirect(
-        new URL(`/tickets/${ticketId}?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
+        new URL(`/tasks/${taskId}?error=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
         { status: 303 }
       );
     }

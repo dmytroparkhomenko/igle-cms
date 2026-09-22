@@ -1,4 +1,4 @@
-import { IgleError } from "@igle/shared";
+import { IgleError, taskCategoryLabels, type TaskCategory } from "@igle/shared";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
 
@@ -136,7 +136,10 @@ export default async function TeamPage({
             <div className="main">
               <h3>{member.name}</h3>
               <p className="muted">
-                {member.email} {member.canDeployRestricted ? <span className="status" style={{ marginLeft: 6, fontSize: 11 }}>Can deploy restricted</span> : null}{" "}
+                {member.email}{" "}
+                {member.role === "administrator" ? (
+                  <span className="status" style={{ marginLeft: 6, fontSize: 11 }}>Can deploy restricted</span>
+                ) : null}{" "}
                 <span
                   className="badge"
                   style={{
@@ -164,13 +167,18 @@ export default async function TeamPage({
             </form>
             <form
               method="post"
-              action={`/api/team/members/${member.id}/restricted-access`}
-              style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8 }}
+              action={`/api/team/members/${member.id}/tags`}
+              style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8, flexWrap: "wrap" }}
             >
-              <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                <input type="checkbox" name="canDeployRestricted" defaultChecked={member.canDeployRestricted} />
-                Restricted servers
-              </label>
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                Task tags:
+              </span>
+              {Object.entries(taskCategoryLabels).map(([value, label]) => (
+                <label key={value} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
+                  <input type="checkbox" name="tags" value={value} defaultChecked={member.tags.includes(value as TaskCategory)} />
+                  {label}
+                </label>
+              ))}
               <button className="button" type="submit" style={{ fontSize: 12.5, padding: "5px 10px" }}>
                 Save
               </button>

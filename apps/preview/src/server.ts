@@ -115,10 +115,29 @@ function normalizeRoute(route: string): string {
  * Site HTML commonly hard-codes root-relative paths (src="/assets/x.png"). The preview
  * origin serves every site under a /<siteId>/ prefix, so those resolve to the wrong URL
  * in the browser. This rewrites only the served bytes — the file on disk is untouched.
+ *
+ * `srcset` needs its own pass: it's a comma-separated list of "url descriptor" candidates (e.g.
+ * `<picture><source srcset="...">`), not a single URL like src/href, so each candidate's URL is
+ * rewritten individually rather than treating the whole attribute value as one path.
  */
 function rewriteAbsolutePaths(html: string, siteId: string): string {
   const prefix = `/${siteId}`;
-  return html.replace(/(\s(?:src|href)=")\/(?!\/)([^"]*)(")/gi, `$1${prefix}/$2$3`);
+  const withSrcAndHref = html.replace(/(\s(?:src|href)=")\/(?!\/)([^"]*)(")/gi, `$1${prefix}/$2$3`);
+  return withSrcAndHref.replace(/(\ssrcset=")([^"]*)(")/gi, (_match, open: string, value: string, close: string) => {
+    const rewritten = value
+      .split(",")
+      .map((candidate) => {
+        const trimmed = candidate.trim();
+        if (!trimmed) return trimmed;
+        const spaceIndex = trimmed.search(/\s/);
+        const url = spaceIndex === -1 ? trimmed : trimmed.slice(0, spaceIndex);
+        const descriptor = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex);
+        if (!url.startsWith("/") || url.startsWith("//")) return trimmed;
+        return `${prefix}${url}${descriptor}`;
+      })
+      .join(", ");
+    return `${open}${rewritten}${close}`;
+  });
 }
 
 const BRIDGE_SCRIPT = `(function () {
@@ -150,6 +169,30 @@ const BRIDGE_SCRIPT = `(function () {
       backgroundColor: rgbToHex(computed.backgroundColor),
       ancestors: ancestors
     };
+  }
+
+  // Rewrites the URL of any srcset candidate exactly matching oldSrc, preserving each
+  // candidate's width/pixel-density descriptor — same rule as the server-side rewrite.
+  // Returns null (no-op) if nothing in the list matched.
+  function rewriteSrcsetForOldSrc(srcsetValue, oldSrc, newSrc) {
+    if (!srcsetValue) return null;
+    var parts = srcsetValue.split(",");
+    var changed = false;
+    var result = [];
+    for (var i = 0; i < parts.length; i++) {
+      var candidate = parts[i].replace(/^\\s+|\\s+$/g, "");
+      if (!candidate) continue;
+      var spaceIndex = candidate.search(/\\s/);
+      var url = spaceIndex === -1 ? candidate : candidate.slice(0, spaceIndex);
+      var descriptor = spaceIndex === -1 ? "" : candidate.slice(spaceIndex);
+      if (url === oldSrc) {
+        changed = true;
+        result.push(newSrc + descriptor);
+      } else {
+        result.push(candidate);
+      }
+    }
+    return changed ? result.join(", ") : null;
   }
 
   function rgbToHex(rgb) {
@@ -233,7 +276,25 @@ const BRIDGE_SCRIPT = `(function () {
 
     if (msg.type === "setAttr") {
       var toSetAttr = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
-      if (toSetAttr) toSetAttr.setAttribute(msg.attrName, msg.value);
+      if (toSetAttr) {
+        // A <picture>'s <source siblings> render instead of this <img> whenever one matches —
+        // live-updating just the img's src would silently show no change at all. Mirrors the
+        // same rewrite the server does when the edit is actually saved (see
+        // replaceImageSrcEverywhere in @igle/html-engine), so the instant preview matches what
+        // you'll see after clicking Save.
+        if (msg.attrName === "src" && toSetAttr.tagName === "IMG") {
+          var oldSrc = toSetAttr.getAttribute("src");
+          var picture = toSetAttr.closest("picture");
+          if (picture && oldSrc) {
+            var sources = picture.querySelectorAll("source[srcset]");
+            for (var i = 0; i < sources.length; i++) {
+              var rewritten = rewriteSrcsetForOldSrc(sources[i].getAttribute("srcset"), oldSrc, msg.value);
+              if (rewritten !== null) sources[i].setAttribute("srcset", rewritten);
+            }
+          }
+        }
+        toSetAttr.setAttribute(msg.attrName, msg.value);
+      }
     }
 
     if (msg.type === "removeAttr") {

@@ -296,6 +296,28 @@ a.list-row:hover {
   display: grid;
 }
 
+/* Tasks board view — status columns, grouped only (no drag/drop, no ordering within a column). */
+.board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 14px;
+  align-items: start;
+  overflow-x: auto;
+}
+
+.board-column {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 12px;
+  min-width: 0;
+}
+
+.board-column h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
 .diff-view {
   margin: 0;
   padding: 10px 12px;
@@ -369,6 +391,42 @@ a.list-row:hover {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: deploy-spin 0.8s linear infinite;
+}
+
+/* ===== Visual editor "how it works" modal — reuses .deploy-modal-backdrop for the overlay ===== */
+
+.editor-info-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 80vh;
+  overflow-y: auto;
+  text-align: left;
+  box-shadow: 0 12px 32px rgba(20, 24, 30, 0.18);
+}
+
+.editor-info-modal dl {
+  margin: 16px 0 0;
+}
+
+.editor-info-modal dt {
+  font-weight: 600;
+  font-size: 13px;
+  margin-top: 14px;
+}
+
+.editor-info-modal dt:first-child {
+  margin-top: 0;
+}
+
+.editor-info-modal dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { apiError } from "@igle/shared";
+import { apiError, taskCategories, type TaskCategory } from "@igle/shared";
 import { runtime } from "../../../../../../lib/runtime";
-import { requireActor , resolveRequestOrigin} from "../../../../../../lib/session";
+import { requireActor, resolveRequestOrigin } from "../../../../../../lib/session";
 
 export async function POST(request: Request, context: { params: Promise<{ userId: string }> }) {
   const accept = request.headers.get("accept") ?? "";
@@ -11,9 +11,12 @@ export async function POST(request: Request, context: { params: Promise<{ userId
   try {
     const actor = await requireActor();
     const form = await request.formData();
-    const value = form.get("canDeployRestricted") === "on";
+    const tags = form
+      .getAll("tags")
+      .map((value) => String(value))
+      .filter((value): value is TaskCategory => (taskCategories as readonly string[]).includes(value));
 
-    await runtime.authService.setCanDeployRestricted(userId, value, actor);
+    await runtime.authService.setUserTags(userId, tags, actor);
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL("/team?updated=1", resolveRequestOrigin(request)), { status: 303 });

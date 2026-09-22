@@ -46,8 +46,8 @@ export class DomainService {
     if (!account) throw new IgleError("CLOUDFLARE_ACCOUNT_NOT_FOUND", "Cloudflare account was not found.", 404);
     const server = await this.serverService.getInternal(input.serverId);
     if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
-    if (server.restricted && !actor.canDeployRestricted) {
-      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can use it.`, 403);
+    if (server.restricted && actor.role !== "administrator") {
+      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators can use it.`, 403);
     }
     if (!server.publicIp) {
       throw new IgleError("SERVER_PUBLIC_IP_REQUIRED", `Set a public IP for "${server.name}" in Servers before connecting a domain to it.`, 400);
@@ -119,8 +119,8 @@ export class DomainService {
     }
     const server = await this.serverService.getInternal(domain.serverId);
     if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
-    if (server.restricted && !actor.canDeployRestricted) {
-      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can use it.`, 403);
+    if (server.restricted && actor.role !== "administrator") {
+      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators can use it.`, 403);
     }
 
     const ssl =

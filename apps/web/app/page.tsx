@@ -13,6 +13,9 @@ export default async function DashboardPage() {
   const draft = sites.length - published;
   const deployedCount = sites.filter((site) => site.productionRevisionId).length;
   const teamCount = state.users.length;
+  const myOpenTasks = state.tasks.filter(
+    (task) => task.assigneeId === actor.id && task.status !== "done" && task.status !== "cancelled" && !task.archivedAt
+  ).length;
 
   const siteById = new Map(sites.map((site) => [site.id, site]));
   const recentDeployments = state.deployments
@@ -49,6 +52,10 @@ export default async function DashboardPage() {
         <article className="card">
           <div className="muted">Team members</div>
           <h2>{teamCount}</h2>
+        </article>
+        <article className="card">
+          <div className="muted">My open tasks</div>
+          <h2>{myOpenTasks}</h2>
         </article>
       </section>
 
@@ -98,6 +105,10 @@ export default async function DashboardPage() {
         <Link href="/deployments" className="card card-link">
           <h3 style={{ margin: 0 }}>Deployments</h3>
           <p className="muted" style={{ margin: "4px 0 0" }}>Full deployment history</p>
+        </Link>
+        <Link href="/tasks" className="card card-link">
+          <h3 style={{ margin: 0 }}>Tasks</h3>
+          <p className="muted" style={{ margin: "4px 0 0" }}>Team task board and assignments</p>
         </Link>
         {actor.role === "administrator" ? (
           <Link href="/team" className="card card-link">

@@ -59,8 +59,8 @@ export class DeployService {
       throw new IgleError("SERVER_NOT_FOUND", "This site's assigned server no longer exists — pick another one in Site Settings.", 400);
     }
     // The restricted-access gate is an affiliate-only concept — PBN sites can use any server.
-    if (server.restricted && !actor.canDeployRestricted && site.metadata.category !== "pbn") {
-      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can deploy to it.`, 403);
+    if (server.restricted && actor.role !== "administrator" && site.metadata.category !== "pbn") {
+      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators can deploy to it.`, 403);
     }
     return server;
   }
@@ -69,7 +69,7 @@ export class DeployService {
   async testServerConnection(serverId: string, actor: Actor): Promise<{ ok: boolean; siteCount?: number; error?: string }> {
     const server = await this.serverService.getInternal(serverId);
     if (!server) return { ok: false, error: "Server was not found." };
-    if (server.restricted && !actor.canDeployRestricted) return { ok: false, error: "You don't have access to this restricted server." };
+    if (server.restricted && actor.role !== "administrator") return { ok: false, error: "You don't have access to this restricted server." };
     if (server.kind === "cloudpanel") return new CloudPanelProvider(cloudPanelConfig(server)).testConnection();
     return new AaPanelProvider(aaPanelConfig(server)).testConnection();
   }
@@ -88,7 +88,7 @@ export class DeployService {
 
   async findExistingAaPanelSite(serverId: string, actor: Actor, domain: string, forPbn = false): Promise<AaPanelSiteSummary | undefined> {
     const server = await this.serverService.getInternal(serverId);
-    if (!server || (server.restricted && !actor.canDeployRestricted && !forPbn) || server.kind !== "aapanel") return undefined;
+    if (!server || (server.restricted && actor.role !== "administrator" && !forPbn) || server.kind !== "aapanel") return undefined;
     return new AaPanelProvider(aaPanelConfig(server)).findExistingSite(domain);
   }
 
@@ -111,8 +111,8 @@ export class DeployService {
   private async requireSelectableServer(serverId: string, actor: Actor, forPbn = false): Promise<ServerRecord> {
     const server = await this.serverService.getInternal(serverId);
     if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
-    if (server.restricted && !actor.canDeployRestricted && !forPbn) {
-      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators granted access can use it.`, 403);
+    if (server.restricted && actor.role !== "administrator" && !forPbn) {
+      throw new IgleError("FORBIDDEN_RESTRICTED_SERVER", `"${server.name}" is a restricted server — only administrators can use it.`, 403);
     }
     return server;
   }

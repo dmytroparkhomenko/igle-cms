@@ -202,10 +202,10 @@ export class SiteService {
         const state = await this.stateStore.read();
         const server = state.servers.find((item) => item.id === trimmedServerId);
         if (!server) throw new IgleError("SERVER_NOT_FOUND", "That server was not found.", 404);
-        if (server.restricted && !actor.canDeployRestricted && effectiveCategory !== "pbn") {
+        if (server.restricted && actor.role !== "administrator" && effectiveCategory !== "pbn") {
           throw new IgleError(
             "FORBIDDEN_RESTRICTED_SERVER",
-            `"${server.name}" is a restricted server — only administrators granted access can move a site there.`,
+            `"${server.name}" is a restricted server — only administrators can move a site there.`,
             403
           );
         }

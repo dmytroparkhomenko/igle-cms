@@ -63,14 +63,14 @@ export class ServerService {
    * For deploy-time / site-settings use — filters out servers the actor isn't allowed to touch
    * if restricted. Never exposes any credential.
    *
-   * The restricted-access gate is an affiliate-only concept — pass `forPbn: true` (the site being
-   * configured is a PBN site) to include restricted servers regardless of the actor's own
-   * `canDeployRestricted` permission.
+   * Restricted servers are administrator-only. The restricted-access gate is also an
+   * affiliate-only concept — pass `forPbn: true` (the site being configured is a PBN site) to
+   * include restricted servers regardless of the actor's role.
    */
   async listSelectable(actor: Actor, forPbn = false): Promise<Array<{ id: string; name: string; kind: ServerKind; restricted: boolean }>> {
     const state = await this.stateStore.read();
     return state.servers
-      .filter((server) => !server.restricted || actor.canDeployRestricted || forPbn)
+      .filter((server) => !server.restricted || actor.role === "administrator" || forPbn)
       .map((server) => ({ id: server.id, name: server.name, kind: server.kind, restricted: server.restricted }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }

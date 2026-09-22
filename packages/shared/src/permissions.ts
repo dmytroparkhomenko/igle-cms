@@ -19,7 +19,8 @@ export const capabilities = [
   "ai.configure",
   "ai.use",
   "integrations.configure",
-  "revisions.restore"
+  "revisions.restore",
+  "tasks.manage"
 ] as const;
 
 export type Capability = (typeof capabilities)[number];
@@ -28,8 +29,6 @@ export interface Actor {
   id: string;
   email: string;
   role: Role;
-  /** Independent of role — gates deploying/moving a site onto a server flagged `restricted`. */
-  canDeployRestricted?: boolean;
 }
 
 const adminCapabilities = new Set<Capability>(capabilities);
@@ -38,10 +37,10 @@ const adminCapabilities = new Set<Capability>(capabilities);
  * An editor gets every site-level feature on every site — there's no per-site grant system (one
  * existed in the types before this, but nothing ever populated it, so every editor silently saw
  * zero sites; removed rather than wired up, since the actual requirement is flat access). The
- * only two restrictions an editor has: deploying to a server flagged `restricted` (gated
- * separately by canDeployRestricted, checked directly where a deploy target is resolved — not a
- * capability), and the tool-wide management surfaces below that aren't in this set at all
- * (Team, Servers, Domains/Cloudflare, template library management, global integrations).
+ * only two restrictions an editor has: deploying to a server flagged `restricted` (gated by role
+ * directly — administrator-only, checked where a deploy target is resolved, not a capability),
+ * and the tool-wide management surfaces below that aren't in this set at all (Team, Servers,
+ * Domains/Cloudflare, template library management, global integrations).
  */
 const editorCapabilities = new Set<Capability>([
   "sites.create",

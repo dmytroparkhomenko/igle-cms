@@ -477,6 +477,13 @@ export function absolutizeRelativeReferences(
  * everywhere it appears, not just on the page where the edit started). Also strips any `srcset`
  * on those elements: a browser prefers `srcset` over `src` whenever both are present, so a stale
  * `srcset` left pointing at the old image would make the `src` swap invisible.
+ *
+ * Also rewrites `<picture><source srcset="...">` candidates that reference `oldSrc` — a `<source>`
+ * has no `src` attribute at all, only `srcset`, and a browser prefers a matching `<source>` over
+ * the `<picture>`'s trailing `<img>` fallback. Without this, replacing an image used inside a
+ * `<picture>` (common for responsive/format-negotiated images — several real sites in this app
+ * use exactly this pattern) updates the `<img>` but the visible, rendered image never changes,
+ * since the browser keeps loading the untouched `<source>`.
  */
 export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: string): { html: string; count: number } {
   const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
@@ -490,7 +497,35 @@ export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: 
     removeAttributeFromNode(ms, html, node, "srcset");
     count += 1;
   }
+  for (const node of findElements(document, "source")) {
+    const srcset = attr(node, "srcset");
+    if (!srcset) continue;
+    const rewritten = rewriteSrcsetForOldSrc(srcset, oldSrc, newSrc);
+    if (rewritten === undefined) continue;
+    const range = attrValueRange(node, "srcset", html);
+    if (!range) continue;
+    ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "srcset", rewritten));
+    count += 1;
+  }
   return { html: ms.toString(), count };
+}
+
+/** Rewrites the URL of any `srcset` candidate exactly matching oldSrc, preserving each candidate's width/pixel-density descriptor and the list's order. Returns undefined (no-op) if nothing matched, so callers can skip touching a node whose srcset is unrelated. */
+function rewriteSrcsetForOldSrc(srcsetValue: string, oldSrc: string, newSrc: string): string | undefined {
+  let changed = false;
+  const rewritten = srcsetValue
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((candidate) => {
+      const spaceIndex = candidate.search(/\s/);
+      const url = spaceIndex === -1 ? candidate : candidate.slice(0, spaceIndex);
+      const descriptor = spaceIndex === -1 ? "" : candidate.slice(spaceIndex);
+      if (url !== oldSrc) return candidate;
+      changed = true;
+      return `${newSrc}${descriptor}`;
+    });
+  return changed ? rewritten.join(", ") : undefined;
 }
 
 function removeAttributeFromNode(ms: TextPatcher, html: string, node: ElementNode, attrName: string): void {

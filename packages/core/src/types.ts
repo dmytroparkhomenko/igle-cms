@@ -1,4 +1,4 @@
-import type { FieldState, SiteMetadata } from "@igle/shared";
+import type { FieldState, SiteMetadata, TaskCategory } from "@igle/shared";
 
 export type RevisionSource =
   | "import"
@@ -90,7 +90,8 @@ export interface CoreState {
   sessions: SessionRecord[];
   drafts: DraftRecord[];
   jobs: JobRecord[];
-  tickets: TicketRecord[];
+  tasks: TaskRecord[];
+  notifications: NotificationRecord[];
   deployments: DeploymentRecord[];
   servers: ServerRecord[];
   cloudflareAccounts: CloudflareAccountRecord[];
@@ -106,6 +107,8 @@ export interface CoreState {
    * administrator. Storage only for now: nothing reads or applies these to site content yet.
    */
   affiliateLinks?: Record<string, string> | undefined;
+  /** ISO timestamp of the last weekly task-archive sweep (see TaskService.runWeeklyArchiveSweepIfDue) — lets the worker tell it's already run today without a second store. */
+  taskArchiveSweepAt?: string | undefined;
 }
 
 export interface UserRecord {
@@ -114,8 +117,8 @@ export interface UserRecord {
   name: string;
   role: "administrator" | "editor";
   passwordHash: string;
-  /** Deploying/moving a site onto a server flagged `restricted` requires this — off by default for everyone but the bootstrap admin. */
-  canDeployRestricted: boolean;
+  /** Descriptive only, not a permission — which task categories this person covers, so a task's assignee picker can surface likely-relevant people first. Admin-managed from /team. */
+  tags: TaskCategory[];
   twoFactorSecret?: string | undefined;
   twoFactorEnabled: boolean;
   /** bcrypt hashes of unused one-time backup codes — self-service recovery when the authenticator device is lost. Never store the plaintext codes; each is shown to the user exactly once, right after it's generated. */
@@ -127,7 +130,7 @@ export interface UserRecord {
   createdAt: string;
 }
 
-/** A registered VPS (aaPanel) a site can deploy to. `restricted` servers require canDeployRestricted on the actor. */
+/** A registered VPS (aaPanel) a site can deploy to. `restricted` servers require an administrator actor. */
 export type ServerKind = "aapanel" | "cloudpanel";
 
 export interface ServerRecord {
@@ -237,11 +240,10 @@ export interface JobRecord {
   updatedAt: string;
 }
 
-export type TicketSpecialistType = "developer" | "designer" | "seo" | "copywriter";
-export type TicketPriority = "low" | "medium" | "high" | "urgent";
-export type TicketStatus = "open" | "in-progress" | "done" | "cancelled";
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+export type TaskStatus = "open" | "in-progress" | "done" | "cancelled";
 
-export interface TicketComment {
+export interface TaskComment {
   id: string;
   author: string;
   /** The commenter's real account — author is a display name resolved from this at write time, so comments still read fine even if the account is later renamed or removed. */
@@ -250,20 +252,88 @@ export interface TicketComment {
   createdAt: string;
 }
 
-export interface TicketRecord {
+export interface TaskChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+  /** Optional — lets a specific team member own just this item, distinct from the task's own assignee. */
+  assigneeId?: string | undefined;
+  createdAt: string;
+  completedAt?: string | undefined;
+}
+
+export interface TaskAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  byteSize: number;
+  /** Relative path under dataDir/task-attachments — never a full filesystem path. */
+  storageKey: string;
+  uploadedById?: string | undefined;
+  createdAt: string;
+}
+
+export type TaskActivityAction =
+  | "created"
+  | "status-changed"
+  | "priority-changed"
+  | "category-changed"
+  | "reassigned"
+  | "deadline-changed"
+  | "checklist-item-added"
+  | "checklist-item-toggled"
+  | "checklist-item-removed"
+  | "attachment-added"
+  | "attachment-removed"
+  | "archived"
+  | "unarchived";
+
+export interface TaskActivityEntry {
+  id: string;
+  action: TaskActivityAction;
+  actorId?: string | undefined;
+  /** Display-name snapshot, same rationale as TaskComment.author. */
+  actorLabel: string;
+  from?: string | undefined;
+  to?: string | undefined;
+  createdAt: string;
+}
+
+export interface TaskRecord {
   id: string;
   siteId?: string | undefined;
   title: string;
   description: string;
-  specialistType: TicketSpecialistType;
-  priority: TicketPriority;
-  status: TicketStatus;
+  category: TaskCategory;
+  priority: TaskPriority;
+  status: TaskStatus;
   deadline?: string | undefined;
-  /** The team member (UserRecord.id) this ticket belongs to — unset means unassigned. */
+  /** The team member (UserRecord.id) this task belongs to — unset means unassigned. */
   assigneeId?: string | undefined;
-  comments: TicketComment[];
+  /** Who created it — undefined on tasks migrated from the old `tickets` array, which never captured this. */
+  creatorId?: string | undefined;
+  comments: TaskComment[];
+  checklist: TaskChecklistItem[];
+  attachments: TaskAttachment[];
+  activity: TaskActivityEntry[];
+  /** Soft-archive, admin only — never hard-deleted, matching PageIndexRecord's trash/restore pattern. */
+  archivedAt?: string | undefined;
   createdAt: string;
   updatedAt: string;
+}
+
+export type NotificationKind = "task-assigned" | "task-comment" | "task-status-changed";
+
+export interface NotificationRecord {
+  id: string;
+  /** Recipient — UserRecord.id. */
+  userId: string;
+  kind: NotificationKind;
+  taskId: string;
+  /** Pre-rendered at write time, e.g. "Alice assigned you \"Fix homepage banner\"". */
+  message: string;
+  readAt?: string | undefined;
+  createdAt: string;
 }
 
 export type DeploymentStatus = "success" | "failed" | "rolled-back";
