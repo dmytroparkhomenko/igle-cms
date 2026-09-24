@@ -5,6 +5,7 @@ import { applyPageSEO, parsePageSEO } from "@igle/html-engine";
 import { assertCan, effectiveSiteLanguageTag, IgleError, matchesSiteLanguage, resolveInside, type Actor, type SiteMetadata } from "@igle/shared";
 import { ensureIgleMetadata, writeSiteMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
 
@@ -26,11 +27,19 @@ export interface UpdateSiteSettingsInput {
   category?: SiteMetadata["category"];
   deploymentTarget?: SiteMetadata["deploymentTarget"];
   serverId?: string;
+  platform?: SiteMetadata["platform"] | undefined;
+  contentLocked?: boolean | undefined;
+  contentLockReason?: string | undefined;
+  /** Site-wide canonical target for the domain-gluing strategy — see siteMetadataSchema. Pass an empty string to clear it. */
+  canonicalDomain?: string | undefined;
+  /** Explicit hreflang alternates for the domain-gluing strategy — replaces the whole list. */
+  hreflangTargets?: SiteMetadata["hreflangTargets"] | undefined;
 }
 
 const DOMAIN_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
 const LANGUAGE_PATTERN = /^[a-z]{2}$/i;
 const COUNTRY_PATTERN = /^[a-z]{2}$/i;
+const HREFLANG_PATTERN = /^([a-z]{2}(-[A-Za-z0-9]{2,8})?|x-default)$/i;
 
 export class SiteService {
   constructor(
@@ -59,6 +68,9 @@ export class SiteService {
       sourceType: "blank",
       starred: false,
       category: "affiliate",
+      platform: "static",
+      contentLocked: false,
+      hreflangTargets: [],
       seoLimits: { titleMin: 30, titleMax: 60, descriptionMin: 70, descriptionMax: 160 },
       sitemap: { enabled: true },
       robots: { mode: "cms-generated" },
@@ -188,6 +200,22 @@ export class SiteService {
     if (country && !COUNTRY_PATTERN.test(country)) {
       throw new IgleError("INVALID_COUNTRY", "Country must be a 2-letter ISO 3166-1 code, e.g. US.", 400, { country });
     }
+    if (input.hreflangTargets) {
+      for (const target of input.hreflangTargets) {
+        if (!HREFLANG_PATTERN.test(target.lang.trim())) {
+          throw new IgleError("INVALID_HREFLANG", `"${target.lang}" isn't a valid hreflang tag — use a language code like "en" or "es-MX", or "x-default".`, 400, { lang: target.lang });
+        }
+        if (!target.domain.trim()) {
+          throw new IgleError("INVALID_HREFLANG", "Every hreflang target needs a domain.", 400);
+        }
+      }
+    }
+    // Locking is a safety mechanism, not an ordinary content setting — an editor who could
+    // unlock a dynamic (WordPress/MODX) site could then edit and deploy it, which is exactly
+    // what the lock exists to prevent. Only an admin can change it either direction.
+    if ((input.contentLocked !== undefined || input.platform !== undefined) && actor.role !== "administrator") {
+      throw new IgleError("FORBIDDEN", "Only administrators can change a site's content lock.", 403);
+    }
 
     // Settle the effective category before the server check below — a request can change both
     // in the same submission, and the restricted-access gate is an affiliate-only concept.
@@ -228,6 +256,11 @@ export class SiteService {
       category: effectiveCategory,
       deploymentTarget: input.deploymentTarget ?? site.metadata.deploymentTarget,
       ...(nextServerId ? { serverId: nextServerId } : {}),
+      platform: input.platform ?? site.metadata.platform,
+      contentLocked: input.contentLocked ?? site.metadata.contentLocked,
+      contentLockReason: input.contentLockReason ?? site.metadata.contentLockReason,
+      canonicalDomain: input.canonicalDomain !== undefined ? input.canonicalDomain.trim() || undefined : site.metadata.canonicalDomain,
+      hreflangTargets: input.hreflangTargets ?? site.metadata.hreflangTargets,
       updatedAt: new Date().toISOString()
     };
 
@@ -242,8 +275,11 @@ export class SiteService {
     // "es"+"MX" -> "es-MX"). A page whose lang still matches the OLD effective value (or has
     // none) was tracking the default and follows either change; a page already overridden is
     // left alone. This fires on a country-only change too, since that changes the effective tag.
+    // updateSettings itself must stay open on a locked site — it's the only way to unlock one —
+    // but the language cascade below rewrites every page's HTML, which is exactly the kind of
+    // content mutation locking exists to prevent.
     const nextEffectiveLang = effectiveSiteLanguageTag(metadata);
-    if (nextEffectiveLang !== previousEffectiveLang) {
+    if (nextEffectiveLang !== previousEffectiveLang && !metadata.contentLocked) {
       await this.cascadeLanguageToPages(site, previousEffectiveLang, nextEffectiveLang);
     }
 
@@ -303,6 +339,7 @@ export class SiteService {
    */
   async reapplyLanguageToAllPages(site: SiteRecord, actor: Actor): Promise<{ revisionNumber: number; updatedPageIds: string[] }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const effectiveLang = effectiveSiteLanguageTag(site.metadata);
     const state = await this.stateStore.read();
     const pages = state.pages.filter((page) => page.siteId === site.id && !page.deletedAt);
@@ -361,6 +398,7 @@ export class SiteService {
     actor: Actor
   ): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
 
     const robots: SiteMetadata["robots"] =
       input.robotsMode === "manual" ? { mode: "manual", content: input.robotsContent ?? "" } : { mode: "cms-generated" };

@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { IgleError } from "@igle/shared";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { RevisionSource, SiteRecord, SiteRevisionRecord } from "./types.js";
 
@@ -96,6 +97,7 @@ export class RevisionService {
   }
 
   async restore(site: SiteRecord, revisionNumber: number, user?: { id: string; name: string; email: string }): Promise<SiteRevisionRecord> {
+    assertSiteEditable(site);
     const revision = (await this.list(site.id)).find((item) => item.revisionNumber === revisionNumber);
     if (!revision) throw new IgleError("REVISION_NOT_FOUND", "Revision does not exist.", 404);
 

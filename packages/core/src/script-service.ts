@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { assertCan, IgleError, scriptsMetadataSchema, type Actor } from "@igle/shared";
 import { readJson, writeJson } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import type { SiteRecord } from "./types.js";
 
 export interface ScriptInput {
@@ -45,6 +46,7 @@ export class ScriptService {
 
   async addScript(site: SiteRecord, input: ScriptInput, actor: Actor): Promise<{ revisionNumber: number; scriptId: string }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const hash = scriptHash(input.code);
@@ -82,6 +84,7 @@ export class ScriptService {
 
   async setEnabled(site: SiteRecord, scriptId: string, enabled: boolean, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const script = metadata.scripts.find((item) => item.id === scriptId);
@@ -99,6 +102,7 @@ export class ScriptService {
 
   async deleteScript(site: SiteRecord, scriptId: string, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     const filePath = path.join(site.repoPath, ".igle", "scripts.json");
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const script = metadata.scripts.find((item) => item.id === scriptId);

@@ -45,6 +45,22 @@ export const siteMetadataSchema = z.object({
   starred: z.boolean().default(false),
   /** Which "folder" a site belongs to on the Sites list — affiliate sites vs. a private blog network, kept visually and organizationally separate. */
   category: z.enum(["affiliate", "pbn"]).default("affiliate"),
+  /** What kind of site this actually is on disk — "static" is anything Igle CMS can safely edit/deploy. The others are dynamic/database-driven installs (detected on aaPanel import) that Igle CMS only ever sees a stale file snapshot of. */
+  platform: z.enum(["static", "wordpress", "modx", "php-dynamic"]).default("static"),
+  /** When true, every content-mutating action (editing, deploying, importing over, etc.) is refused — see assertSiteEditable. Sites deploying via CloudPanel wipe the document root before extracting a build, and the aaPanel build strips .php/.htaccess files, so deploying a dynamic site's stale snapshot would destroy the real live install. */
+  contentLocked: z.boolean().default(false),
+  contentLockReason: z.string().optional(),
+  /** Site-wide canonical target for the "domain gluing" SEO strategy (consolidating an aged/dropped domain into a newly-registered replacement) — every page without its own CMS-written canonical gets `${canonicalDomain}${page.route}` at build time. A page the CMS itself set a canonical on is left alone. */
+  canonicalDomain: z.string().optional(),
+  /** Explicit cross-domain hreflang alternates for the same "domain gluing" strategy — when set, this is the authoritative source for hreflang injection (full manual control), overriding the implicit mirror-partner-based default. Each page gets one <link rel="alternate"> per target plus a self-reference. */
+  hreflangTargets: z
+    .array(
+      z.object({
+        lang: z.string(),
+        domain: z.string()
+      })
+    )
+    .default([]),
   seoLimits: seoLimitsSchema.default({
     titleMin: 30,
     titleMax: 60,

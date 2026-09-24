@@ -70,8 +70,21 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   if (site.metaRobots === "noindex") {
     await injectNoindexMeta(buildPath);
   }
-  if (input.hreflangPartner) {
-    await injectHreflang(buildPath, pages.pages, canonicalBase(site, input.productionBaseUrl), effectiveSiteLanguageTag(site), input.hreflangPartner);
+  if (site.canonicalDomain) {
+    await injectCanonical(buildPath, pages.pages, site.canonicalDomain);
+  }
+  // Explicit hreflangTargets (set in Site Settings for the domain-gluing strategy) are the
+  // authoritative source when present — full manual control, since a "gluing" pair often isn't a
+  // full-content MirrorService pair. Otherwise fall back to the existing implicit mirror-partner
+  // behavior unchanged, so a site with no explicit config keeps working exactly as before.
+  const hreflangAlternates =
+    site.hreflangTargets.length > 0
+      ? site.hreflangTargets.map((target) => ({ languageTag: target.lang, baseUrl: target.domain }))
+      : input.hreflangPartner
+        ? [input.hreflangPartner]
+        : [];
+  if (hreflangAlternates.length > 0) {
+    await injectHreflang(buildPath, pages.pages, canonicalBase(site, input.productionBaseUrl), effectiveSiteLanguageTag(site), hreflangAlternates);
   }
 
   const issues = await validateBuild(buildPath);
@@ -161,13 +174,18 @@ async function injectNoindexMeta(buildPath: string): Promise<void> {
   }
 }
 
-/** Adds reciprocal `<link rel="alternate" hreflang>` tags (including a self-reference, as required for hreflang to be honored) to every page that has a same-route counterpart on the paired site — see BuildSiteInput.hreflangPartner. */
+/**
+ * Adds reciprocal `<link rel="alternate" hreflang>` tags (including a self-reference, as
+ * required for hreflang to be honored) to every page — one tag per alternate, either the
+ * explicit site.hreflangTargets list (domain-gluing) or the single implicit mirror partner (see
+ * BuildSiteInput.hreflangPartner), decided by the caller.
+ */
 async function injectHreflang(
   buildPath: string,
   pages: Array<{ filePath: string; route: string }>,
   selfBase: string,
   selfLanguageTag: string,
-  partner: { baseUrl: string; languageTag: string }
+  alternates: Array<{ baseUrl: string; languageTag: string }>
 ): Promise<void> {
   for (const page of pages) {
     const absolutePath = path.join(buildPath, page.filePath);
@@ -175,8 +193,38 @@ async function injectHreflang(
     if (html === undefined || !/<head[ >]/i.test(html)) continue;
     const tags =
       `<link rel="alternate" hreflang="${xmlEscape(selfLanguageTag)}" href="${xmlEscape(`${selfBase}${page.route}`)}">\n` +
-      `<link rel="alternate" hreflang="${xmlEscape(partner.languageTag)}" href="${xmlEscape(`${partner.baseUrl}${page.route}`)}">\n`;
+      alternates
+        .map((alternate) => `<link rel="alternate" hreflang="${xmlEscape(alternate.languageTag)}" href="${xmlEscape(`${alternate.baseUrl}${page.route}`)}">\n`)
+        .join("");
     const updated = html.replace(/<head([^>]*)>/i, `<head$1>\n${tags}`);
+    await fs.writeFile(absolutePath, updated, "utf8");
+  }
+}
+
+/**
+ * Site-wide canonical target for the "domain gluing" SEO strategy (consolidating an aged/dropped
+ * domain into a newly-registered replacement) — every page gets `${canonicalDomain}${route}`
+ * unless the CMS itself already wrote that page's own canonical (fieldStates.canonical can't be
+ * used to tell the difference: an *imported* page with a pre-existing canonical is also marked
+ * "explicit" — lastWrittenHashes.canonical is only ever set by SeoService's own save path).
+ */
+async function injectCanonical(buildPath: string, pages: Array<{ filePath: string; route: string; lastWrittenHashes: Record<string, string> }>, canonicalDomain: string): Promise<void> {
+  const base = canonicalDomain.replace(/\/$/, "");
+  for (const page of pages) {
+    const absolutePath = path.join(buildPath, page.filePath);
+    const html = await fs.readFile(absolutePath, "utf8").catch(() => undefined);
+    if (html === undefined || !/<head[ >]/i.test(html)) continue;
+    const cmsWrittenCanonical = page.lastWrittenHashes.canonical !== undefined && /<link\s+[^>]*rel\s*=\s*["']canonical["'][^>]*href\s*=\s*["'][^"']+["']/i.test(html);
+    if (cmsWrittenCanonical) continue;
+
+    const desired = `${base}${page.route}`;
+    const canonicalTagPattern = /<link\s+[^>]*rel\s*=\s*["']canonical["'][^>]*>/i;
+    let updated: string;
+    if (canonicalTagPattern.test(html)) {
+      updated = html.replace(canonicalTagPattern, `<link rel="canonical" href="${xmlEscape(desired)}">`);
+    } else {
+      updated = html.replace(/<head([^>]*)>/i, `<head$1>\n<link rel="canonical" href="${xmlEscape(desired)}">`);
+    }
     await fs.writeFile(absolutePath, updated, "utf8");
   }
 }

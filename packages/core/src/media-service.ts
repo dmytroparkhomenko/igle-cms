@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { assertCan, IgleError, type Actor } from "@igle/shared";
+import { assertSiteEditable } from "./site-guard.js";
 import type { SiteRecord } from "./types.js";
 
 const allowedExtensions: Record<string, string> = {
@@ -24,6 +25,7 @@ export class MediaService {
   /** Writes an uploaded image into the site's repo root and returns its root-relative src path. Callers are responsible for committing a revision once they've also patched whatever references it. */
   async saveUpload(site: SiteRecord, input: MediaUploadInput, actor: Actor): Promise<{ path: string }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const extension = allowedExtensions[input.mimeType];
     if (!extension) {
       throw new IgleError("UNSUPPORTED_MEDIA_TYPE", "Only JPG, PNG, WebP, GIF, SVG, and AVIF images are supported.", 415);

@@ -13,6 +13,7 @@ import {
 import { assertCan, effectiveSiteLanguageTag, IgleError, type Actor } from "@igle/shared";
 import { RevisionService } from "./revision-service.js";
 import { ServerService } from "./server-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { DeploymentRecord, ServerRecord, SiteRecord, SiteRevisionRecord } from "./types.js";
 
@@ -149,6 +150,7 @@ export class DeployService {
   }
 
   private async deployOne(site: SiteRecord, actor: Actor): Promise<DeploymentRecord> {
+    assertSiteEditable(site);
     const revision = await this.revisionService.latest(site.id);
     if (!revision) throw new IgleError("NO_REVISION", "This site has no revisions to deploy yet.", 400);
 
@@ -434,6 +436,7 @@ export class DeployService {
 
   async rollback(site: SiteRecord, deploymentId: string, actor: Actor): Promise<DeploymentRecord> {
     assertCan(actor, "sites.deploy", site.id);
+    assertSiteEditable(site);
     const state = await this.stateStore.read();
     const target = state.deployments.find((item) => item.id === deploymentId && item.siteId === site.id);
     if (!target || target.status !== "success" || !target.releasePath) {

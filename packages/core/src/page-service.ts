@@ -6,6 +6,7 @@ import { assertCan, effectiveSiteLanguageTag, IgleError, matchesSiteLanguage, re
 import { routeForFile } from "./import-service.js";
 import { readPagesMetadata, writePagesMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
 
@@ -17,6 +18,7 @@ export class PageService {
 
   async duplicate(site: SiteRecord, pageId: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (page.deletedAt) throw new IgleError("PAGE_DELETED", "A page in the trash cannot be duplicated. Restore it first.", 409);
@@ -90,6 +92,7 @@ export class PageService {
 
   async moveToTrash(site: SiteRecord, pageId: string, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (page.deletedAt) throw new IgleError("PAGE_DELETED", "Page is already in the trash.", 409);
@@ -133,6 +136,7 @@ export class PageService {
 
   async restore(site: SiteRecord, pageId: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (!page.deletedAt || !page.trashPath) throw new IgleError("PAGE_NOT_IN_TRASH", "Page is not in the trash.", 409);
@@ -189,6 +193,7 @@ export class PageService {
 
   async purge(site: SiteRecord, pageId: string, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.delete", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     if (!page.deletedAt) throw new IgleError("PAGE_NOT_IN_TRASH", "Only trashed pages can be permanently deleted.", 409);

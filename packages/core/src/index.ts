@@ -16,6 +16,7 @@ export * from "./revision-service.js";
 export * from "./script-service.js";
 export * from "./seo-service.js";
 export * from "./server-service.js";
+export * from "./site-guard.js";
 export * from "./site-lock.js";
 export * from "./site-service.js";
 export * from "./state-store.js";

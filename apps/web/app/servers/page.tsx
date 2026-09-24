@@ -500,7 +500,7 @@ export default async function ServersPage({
 
 function importStatusLabel(server: {
   autoImportStatus?: string | undefined;
-  autoImportSummary?: { imported: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
+  autoImportSummary?: { imported: number; locked: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
 }): string {
   const summary = server.autoImportSummary;
   switch (server.autoImportStatus) {
@@ -510,7 +510,7 @@ function importStatusLabel(server: {
       return "Importing sites from this server…";
     case "done":
       if (!summary) return "Site import finished.";
-      return `Site import: ${summary.imported} imported, ${summary.skipped} already here${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;
+      return `Site import: ${summary.imported} imported${summary.locked > 0 ? ` (${summary.locked} locked — WordPress/MODX)` : ""}, ${summary.skipped} already here${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;
     case "failed": {
       const message = summary?.errors[0]?.message;
       return `Site import failed${message ? `: ${message}` : "."}`;

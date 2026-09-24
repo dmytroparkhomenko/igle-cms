@@ -6,6 +6,7 @@ import { assertCan, effectiveSiteLanguageTag, matchesSiteLanguage, normalizeSite
 import { parsePageSEO } from "@igle/html-engine";
 import { readPagesMetadata, writePagesMetadata, writeSiteMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import { extractZipBuffer } from "./zip-extract.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
@@ -45,6 +46,7 @@ export class ImportService {
 
   async importZip(site: SiteRecord, zipBuffer: Buffer, actor: Actor): Promise<{ revisionNumber: number; report: ImportReport }> {
     assertCan(actor, "sites.create");
+    assertSiteEditable(site);
     const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "igle-zip-"));
     try {
       const zipReport = await extractZipBuffer(zipBuffer, stagingDir);
@@ -59,6 +61,7 @@ export class ImportService {
 
   async importDirectory(site: SiteRecord, sourceDirectory: string, actor: Actor): Promise<{ revisionNumber: number; report: ImportReport }> {
     assertCan(actor, "sites.create");
+    assertSiteEditable(site);
     const report: ImportReport = {
       pagesFound: 0,
       imagesFound: 0,

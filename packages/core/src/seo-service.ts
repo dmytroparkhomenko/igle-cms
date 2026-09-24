@@ -34,6 +34,7 @@ import {
 import { routeForFile } from "./import-service.js";
 import { readJson, readPagesMetadata, writeJson, writePagesMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { withSiteLock } from "./site-lock.js";
 import { JsonStateStore } from "./state-store.js";
 import type { PageIndexRecord, RevisionSource, SiteRecord } from "./types.js";
@@ -63,6 +64,7 @@ export class SEOService {
 
   async updateFields(site: SiteRecord, pageId: string, fields: UpdatePageFieldsInput, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     let page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
 
@@ -104,6 +106,7 @@ export class SEOService {
     options: { fillEmptyOnly: boolean } = { fillEmptyOnly: true }
   ): Promise<BulkSeoResult> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const updatedPageIds: string[] = [];
     const skipped: BulkSeoResult["skipped"] = [];
 
@@ -186,6 +189,7 @@ export class SEOService {
     actor: Actor
   ): Promise<BulkSeoResult> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     const html = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
@@ -207,6 +211,7 @@ export class SEOService {
     actor: Actor
   ): Promise<BulkSeoResult> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const pages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
     const updatedPageIds: string[] = [];
     const skipped: BulkSeoResult["skipped"] = [];
@@ -256,6 +261,7 @@ export class SEOService {
    */
   async applyFaviconToAllPages(site: SiteRecord, faviconHref: string, actor: Actor): Promise<BulkSeoResult> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const pages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
     const updatedPageIds: string[] = [];
     const skipped: BulkSeoResult["skipped"] = [];
@@ -303,6 +309,7 @@ export class SEOService {
    */
   async fixInternalLinks(site: SiteRecord, actor: Actor): Promise<BulkSeoResult> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     const allPages = (await this.stateStore.read()).pages.filter((item) => item.siteId === site.id && !item.deletedAt);
 
     const correctedRoutes = new Map<string, string>();
@@ -408,6 +415,7 @@ export class SEOService {
     source: RevisionSource = "visual-editor"
   ): Promise<{ revisionNumber: number; page: PageIndexRecord; updatedPageIds: string[] }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     return withSiteLock(site.id, () => this.applyVisualEditsLocked(site, pageId, patches, actor, source));
   }
 
@@ -520,6 +528,7 @@ export class SEOService {
     actor: Actor
   ): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     let page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
 
@@ -596,6 +605,7 @@ export class SEOService {
 
   async saveSource(site: SiteRecord, pageId: string, content: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.code", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
 
@@ -640,6 +650,7 @@ export class SEOService {
   /** Splices edited body-middle markup back into the page's current file, leaving its header/footer bytes untouched, then saves it the same way a full source save does. */
   async saveBodyMiddle(site: SiteRecord, pageId: string, middleContent: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.code", site.id);
+    assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     const current = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");

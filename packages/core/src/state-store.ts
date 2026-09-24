@@ -76,6 +76,13 @@ export class JsonStateStore {
       for (const server of state.servers) {
         server.kind ??= "aapanel";
       }
+      // Migration: platform/content-lock/domain-gluing fields didn't exist before the aaPanel
+      // auto-import feature could pull in dynamic (WordPress/MODX) sites.
+      for (const site of state.sites) {
+        site.metadata.platform ??= "static";
+        site.metadata.contentLocked ??= false;
+        site.metadata.hreflangTargets ??= [];
+      }
       return state;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;

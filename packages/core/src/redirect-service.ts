@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { assertCan, IgleError, redirectsMetadataSchema, type Actor } from "@igle/shared";
 import { readJson, writeJson } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import type { SiteRecord } from "./types.js";
 
 export interface RedirectInput {
@@ -26,6 +27,7 @@ export class RedirectService {
 
   async addRedirect(site: SiteRecord, input: RedirectInput, actor: Actor): Promise<{ revisionNumber: number; redirectId: string }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     validateRedirect(input);
     const filePath = path.join(site.repoPath, ".igle", "redirects.json");
     const metadata = redirectsMetadataSchema.parse(await readJson(filePath).catch(() => ({ redirects: [] })));
@@ -43,6 +45,7 @@ export class RedirectService {
 
   async deleteRedirect(site: SiteRecord, redirectId: string, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     const filePath = path.join(site.repoPath, ".igle", "redirects.json");
     const metadata = redirectsMetadataSchema.parse(await readJson(filePath).catch(() => ({ redirects: [] })));
     const existing = metadata.redirects.find((redirect) => redirect.id === redirectId);

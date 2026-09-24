@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildSite } from "@igle/build";
-import { ImportService, JsonStateStore, RevisionService, SiteService, writeJson } from "@igle/core";
+import { ImportService, JsonStateStore, RevisionService, SEOService, SiteService, writeJson } from "@igle/core";
 import type { Actor } from "@igle/shared";
 
 const admin: Actor = { id: "admin", email: "admin@example.com", role: "administrator" };
@@ -66,6 +66,70 @@ describe("build pipeline", () => {
     });
     expect(result.issues.some((issue) => issue.class === "error" && issue.code === "FOOTPRINT_MARKER")).toBe(true);
   });
+
+  it("injects the site's canonicalDomain into every page except one the CMS itself wrote a canonical for", async () => {
+    const runtime = await testRuntime();
+    const site = await runtime.siteService.createBlankSite({ name: "Glue Site", slug: "glue-site" }, admin);
+    await runtime.importService.importDirectory(site, path.resolve(process.cwd(), "fixtures/site-basic"), admin);
+    await runtime.siteService.updateSettings(site, { canonicalDomain: "https://newreg.example" }, admin);
+
+    const pages = (await runtime.stateStore.read()).pages.filter((page) => page.siteId === site.id);
+    const aboutPage = pages.find((page) => page.filePath === "about.html")!;
+    await runtime.seoService.updateFields(site, aboutPage.id, { canonical: "https://keep-me.example/about.html" }, admin);
+
+    const revision = await runtime.revisionService.latest(site.id);
+    const result = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision!.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds")
+    });
+    expect(result.issues.filter((issue) => issue.class === "error")).toEqual([]);
+
+    // index.html imported with its own <link rel="canonical"> already in the raw HTML, but the
+    // CMS never wrote it (no lastWrittenHashes.canonical) — canonicalDomain must override it.
+    const indexHtml = await fs.readFile(path.join(result.buildPath, "index.html"), "utf8");
+    expect(indexHtml).toContain('<link rel="canonical" href="https://newreg.example/">');
+    expect(indexHtml).not.toContain("https://example.com/");
+
+    // about.html's canonical WAS written through SeoService — canonicalDomain must leave it alone.
+    const aboutHtml = await fs.readFile(path.join(result.buildPath, "about.html"), "utf8");
+    expect(aboutHtml).toContain('<link rel="canonical" href="https://keep-me.example/about.html">');
+  });
+
+  it("uses explicit hreflangTargets over the implicit mirror partner when both are present", async () => {
+    const runtime = await testRuntime();
+    const site = await runtime.siteService.createBlankSite({ name: "Hreflang Site", slug: "hreflang-site" }, admin);
+    await runtime.importService.importDirectory(site, path.resolve(process.cwd(), "fixtures/site-basic"), admin);
+    await runtime.siteService.updateSettings(
+      site,
+      {
+        hreflangTargets: [
+          { lang: "es-MX", domain: "https://es.example.com" },
+          { lang: "x-default", domain: "https://example.com" }
+        ]
+      },
+      admin
+    );
+
+    const revision = await runtime.revisionService.latest(site.id);
+    const result = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision!.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds"),
+      productionBaseUrl: "https://example.com",
+      // Present to prove explicit hreflangTargets wins over the implicit mirror partner, not
+      // just that hreflang injection runs at all.
+      hreflangPartner: { baseUrl: "https://ignored.example", languageTag: "de" }
+    });
+
+    const indexHtml = await fs.readFile(path.join(result.buildPath, "index.html"), "utf8");
+    expect(indexHtml).toContain('<link rel="alternate" hreflang="en-US" href="https://example.com/">');
+    expect(indexHtml).toContain('<link rel="alternate" hreflang="es-MX" href="https://es.example.com/">');
+    expect(indexHtml).toContain('<link rel="alternate" hreflang="x-default" href="https://example.com/">');
+    expect(indexHtml).not.toContain('hreflang="de"');
+  });
 });
 
 async function testRuntime() {
@@ -77,6 +141,7 @@ async function testRuntime() {
     stateStore,
     revisionService,
     siteService: new SiteService(dataDir, stateStore, revisionService),
-    importService: new ImportService(stateStore, revisionService)
+    importService: new ImportService(stateStore, revisionService),
+    seoService: new SEOService(stateStore, revisionService)
   };
 }

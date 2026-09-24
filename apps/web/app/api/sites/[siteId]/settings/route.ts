@@ -10,7 +10,8 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
   const { siteId } = await context.params;
 
   try {
-    const site = await runtime.siteService.get(siteId, (await requireActor()));
+    const actor = await requireActor();
+    const site = await runtime.siteService.get(siteId, actor);
     if (!site) throw new IgleError("SITE_NOT_FOUND", "Site was not found.", 404);
 
     const form = await request.formData();
@@ -36,7 +37,32 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const serverIdRaw = form.get("serverId");
     if (serverIdRaw !== null) settings.serverId = String(serverIdRaw);
 
-    await runtime.siteService.updateSettings(site, settings, (await requireActor()));
+    // The "Protection" section (and its contentLocked checkbox) only renders for administrators —
+    // this hidden marker is inside that same section, so its presence is how we tell "an admin
+    // submitted this form" from "an editor submitted the rest of the settings form", without ever
+    // sending contentLocked:false on every ordinary save (which SiteService.updateSettings
+    // refuses from a non-admin actor).
+    if (form.get("contentLockedFieldPresent") !== null) {
+      settings.contentLocked = form.get("contentLocked") === "on";
+    }
+
+    const canonicalDomainRaw = form.get("canonicalDomain");
+    if (canonicalDomainRaw !== null) settings.canonicalDomain = String(canonicalDomainRaw);
+
+    const hreflangTargetsRaw = form.get("hreflangTargets");
+    if (hreflangTargetsRaw !== null) {
+      settings.hreflangTargets = String(hreflangTargetsRaw)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [lang, domain] = line.split(/[\s|,]+/, 2);
+          return { lang: lang ?? "", domain: domain ?? "" };
+        })
+        .filter((target) => target.lang && target.domain);
+    }
+
+    await runtime.siteService.updateSettings(site, settings, actor);
 
     if (wantsRedirect) {
       return NextResponse.redirect(new URL(`/sites/${site.id}?updated=1`, resolveRequestOrigin(request)), { status: 303 });

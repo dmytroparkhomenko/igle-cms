@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { assertCan, IgleError, resolveInside, verificationsMetadataSchema, type Actor } from "@igle/shared";
 import { readJson, writeJson } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import type { SiteRecord } from "./types.js";
 
 export type VerificationProvider = "google" | "bing";
@@ -38,6 +39,7 @@ export class VerificationService {
    */
   async add(site: SiteRecord, provider: VerificationProvider, code: string, actor: Actor): Promise<{ revisionNumber: number; verification: VerificationRecord }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     // Google shows the code as part of a full filename ("google<code>.html"), and it's natural
     // to paste that whole thing — strip a redundant "google" prefix and ".html" suffix so it
     // doesn't get doubled into "googlegoogle<code>.html" when we build the file ourselves below.
@@ -71,6 +73,7 @@ export class VerificationService {
 
   async remove(site: SiteRecord, verificationId: string, actor: Actor): Promise<{ revisionNumber: number }> {
     assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
     const metadata = await this.read(site);
     const existing = metadata.verifications.find((item) => item.id === verificationId);
     if (!existing) throw new IgleError("VERIFICATION_NOT_FOUND", "Verification was not found.", 404);

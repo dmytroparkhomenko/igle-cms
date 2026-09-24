@@ -65,6 +65,7 @@ export default async function SiteDetailPage({
   } = await searchParams;
   const revisionsLimit = Math.max(10, Number(revisionsLimitRaw) || 10);
   const actor = await requireActorOrRedirect();
+  const actorIsAdmin = actor.role === "administrator";
   const site = await runtime.siteService.get(siteId, actor);
   if (!site) notFound();
 
@@ -205,10 +206,24 @@ export default async function SiteDetailPage({
           ) : null}
           <DeployButton
             siteId={site.id}
-            disabled={revisionsAhead === 0 && Boolean(productionRevision)}
+            disabled={site.metadata.contentLocked || (revisionsAhead === 0 && Boolean(productionRevision))}
           />
         </div>
       </div>
+
+      {site.metadata.contentLocked ? (
+        <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
+          <strong>This site is locked{site.metadata.platform !== "static" ? ` (${platformLabel(site.metadata.platform)})` : ""}.</strong>{" "}
+          {site.metadata.contentLockReason ?? "Editing and deploying are disabled."}{" "}
+          {actorIsAdmin ? (
+            <>
+              An administrator can unlock it in the &quot;Protection&quot; section of Site settings below.
+            </>
+          ) : (
+            "Ask an administrator to unlock it if this needs to change."
+          )}
+        </article>
+      ) : null}
 
       <div className="version-tiles">
         <div className="version-tile">
@@ -545,6 +560,58 @@ export default async function SiteDetailPage({
               </p>
             ) : null}
           </div>
+
+          <div className="settings-section">
+            <p className="settings-section-title">Domain gluing</p>
+            <p className="muted" style={{ margin: "0 0 10px", fontSize: 11.5 }}>
+              For consolidating an aged/dropped domain into a newly-registered replacement.
+              Every page without its own explicit canonical (set on that page's SEO fields) gets
+              this target at build time instead of a self-referencing one.
+            </p>
+            <div className="field">
+              <label htmlFor="canonicalDomain">Canonical target domain</label>
+              <input
+                type="text"
+                id="canonicalDomain"
+                name="canonicalDomain"
+                defaultValue={site.metadata.canonicalDomain ?? ""}
+                placeholder="https://newreg.example"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="hreflangTargets">Hreflang alternates</label>
+              <textarea
+                id="hreflangTargets"
+                name="hreflangTargets"
+                rows={4}
+                style={textareaStyle}
+                defaultValue={site.metadata.hreflangTargets.map((target) => `${target.lang} ${target.domain}`).join("\n")}
+                placeholder={"One per line: lang domain\nes-MX https://es.example.com\nx-default https://example.com"}
+              />
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
+                Overrides the automatic mirror-partner hreflang below when set. Leave empty to
+                keep the automatic behavior.
+              </p>
+            </div>
+          </div>
+
+          {actorIsAdmin ? (
+            <div className="settings-section">
+              <p className="settings-section-title">Protection</p>
+              <input type="hidden" name="contentLockedFieldPresent" value="1" />
+              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+                Platform: <strong>{platformLabel(site.metadata.platform)}</strong>
+                {site.metadata.platform !== "static" ? " — auto-detected on import." : ""}
+              </p>
+              <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <input type="checkbox" name="contentLocked" defaultChecked={site.metadata.contentLocked} />
+                Locked — refuse all edits, imports, and deploys for this site
+              </label>
+              {site.metadata.contentLockReason ? (
+                <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>Reason: {site.metadata.contentLockReason}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <button
             className="button"
@@ -1008,3 +1075,16 @@ const textareaStyle = {
   background: "var(--panel)",
   resize: "vertical" as const,
 };
+
+function platformLabel(platform: string): string {
+  switch (platform) {
+    case "wordpress":
+      return "WordPress";
+    case "modx":
+      return "MODX";
+    case "php-dynamic":
+      return "dynamic PHP site";
+    default:
+      return platform;
+  }
+}

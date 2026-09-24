@@ -34,16 +34,22 @@ export default async function CodeEditor({
         </Link>
       </div>
 
-      <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
-        This shows only the page's own content — everything between the header and footer. The header and
-        footer are shared across every page and are edited once on the{" "}
-        <Link href={`/sites/${site.id}/header-footer`} style={{ color: "inherit", textDecoration: "underline" }}>
-          Header/Footer
-        </Link>{" "}
-        screen. Direct source changes can override structured CMS settings. Igle CMS re-indexes this file
-        after saving and creates a new revision; any field that no longer matches what the CMS last wrote
-        becomes <strong>Manual Source</strong>.
-      </article>
+      {site.metadata.contentLocked ? (
+        <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
+          <strong>This site is locked.</strong> {site.metadata.contentLockReason ?? "Editing is disabled."} Shown read-only below.
+        </article>
+      ) : (
+        <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
+          This shows only the page's own content — everything between the header and footer. The header and
+          footer are shared across every page and are edited once on the{" "}
+          <Link href={`/sites/${site.id}/header-footer`} style={{ color: "inherit", textDecoration: "underline" }}>
+            Header/Footer
+          </Link>{" "}
+          screen. Direct source changes can override structured CMS settings. Igle CMS re-indexes this file
+          after saving and creates a new revision; any field that no longer matches what the CMS last wrote
+          becomes <strong>Manual Source</strong>.
+        </article>
+      )}
 
       {updated ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
@@ -62,6 +68,7 @@ export default async function CodeEditor({
           defaultValue={content}
           spellCheck={false}
           rows={32}
+          readOnly={site.metadata.contentLocked}
           style={{
             width: "100%",
             border: "1px solid var(--line)",
@@ -71,13 +78,13 @@ export default async function CodeEditor({
             fontSize: 13,
             lineHeight: 1.5,
             color: "var(--text)",
-            background: "var(--panel)",
+            background: site.metadata.contentLocked ? "var(--line)" : "var(--panel)",
             resize: "vertical",
             tabSize: 2
           }}
         />
         <div style={{ marginTop: 12 }}>
-          <button className="button" type="submit">
+          <button className="button" type="submit" disabled={site.metadata.contentLocked}>
             Save source
           </button>
         </div>

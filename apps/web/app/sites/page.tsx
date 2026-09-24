@@ -45,12 +45,17 @@ export default async function SitesPage({
   for (const site of sites) {
     if (site.metadata.mirrorOfSiteId) mirrorChildBySource.set(site.metadata.mirrorOfSiteId, site);
   }
-  const topLevelSites = sites
+  const allTopLevelSites = sites
     .filter((site) => !site.metadata.mirrorOfSiteId)
     .sort((a, b) => {
       if (Boolean(a.metadata.starred) !== Boolean(b.metadata.starred)) return a.metadata.starred ? -1 : 1;
       return a.metadata.name.localeCompare(b.metadata.name);
     });
+  // Locked (WordPress/MODX/other dynamic) sites get their own section below, outside the
+  // affiliate/PBN category folders — they're not something Igle CMS manages content for, so
+  // grouping them by GEO alongside real editable sites would just be noise.
+  const topLevelSites = allTopLevelSites.filter((site) => !site.metadata.contentLocked);
+  const lockedSites = allTopLevelSites.filter((site) => site.metadata.contentLocked);
 
   // Two top-level "folders" — affiliate sites vs. a private blog network — each sub-divided by
   // GEO so a large batch of sites stays easy to scan. A mirror child always renders attached to
@@ -177,6 +182,23 @@ export default async function SitesPage({
           </section>
         );
       })}
+      {lockedSites.length > 0 ? (
+        <section style={{ marginBottom: 32 }}>
+          <h2 style={{ marginBottom: 4 }}>
+            Managed externally (WordPress/MODX) <span className="muted">({lockedSites.length})</span>
+          </h2>
+          <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5 }}>
+            Imported for reference only — Igle CMS only sees a file snapshot of these, so editing
+            and deploying are disabled to avoid breaking the live install. Open a site to unlock
+            it (administrators only).
+          </p>
+          <div className="list">
+            {lockedSites.map((site) => (
+              <SiteRow key={site.id} site={site} state={state} favicon={favicons.get(site.id)} previewOrigin={previewOrigin} isChild={false} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </>
   );
 }
@@ -261,6 +283,11 @@ function SiteRow({
                 {mirrorLabel}
               </span>
             ) : null}
+            {site.metadata.contentLocked ? (
+              <span className="status" style={{ marginLeft: 8, fontSize: 11, color: "var(--warn)", borderColor: "var(--warn)" }}>
+                Locked
+              </span>
+            ) : null}
           </h3>
           <p className="muted" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
             <span>
@@ -309,7 +336,7 @@ function SiteRow({
               Live
             </a>
           ) : null}
-          <DeployButton siteId={site.id} disabled={revisionsAhead === 0 && Boolean(productionRevision)} />
+          <DeployButton siteId={site.id} disabled={site.metadata.contentLocked || (revisionsAhead === 0 && Boolean(productionRevision))} />
         </div>
       </div>
       {children}

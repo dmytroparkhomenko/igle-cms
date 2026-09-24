@@ -10,10 +10,15 @@ import type { ServerRecord } from "./types.js";
 
 export interface RemoteSiteImportOutcome {
   domain: string;
-  status: "imported" | "skipped-exists" | "excluded" | "failed";
+  status: "imported" | "imported-locked" | "skipped-exists" | "excluded" | "failed";
   siteId?: string;
   warnings?: string[];
   error?: string;
+}
+
+interface SiteClassification {
+  platform: "static" | "wordpress" | "modx" | "php-dynamic";
+  reason?: string;
 }
 
 // Extensionless config files aaPanel's editor happily returns as text — GetFileBody's own
@@ -165,9 +170,9 @@ export class RemoteSiteImportService {
       }
       if (outcomes.length > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
       try {
-        const { siteId, warnings } = await this.importOneSite(provider, remoteSite, server, existingSlugs, actor, onProgress);
+        const { siteId, warnings, locked } = await this.importOneSite(provider, remoteSite, server, existingSlugs, actor, onProgress);
         existingDomains.add(remoteSite.domain);
-        const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: "imported", siteId, warnings };
+        const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: locked ? "imported-locked" : "imported", siteId, warnings };
         outcomes.push(outcome);
         onResult?.(outcome);
         consecutiveFailures = 0;
@@ -234,6 +239,7 @@ export class RemoteSiteImportService {
           record.autoImportFinishedAt = new Date().toISOString();
           record.autoImportSummary = {
             imported: 0,
+            locked: 0,
             skipped: 0,
             excluded: 0,
             failed: 0,
@@ -251,10 +257,15 @@ export class RemoteSiteImportService {
     existingSlugs: Set<string>,
     actor: Actor,
     onProgress?: ProgressCallback
-  ): Promise<{ siteId: string; warnings: string[] }> {
+  ): Promise<{ siteId: string; warnings: string[]; locked: boolean }> {
     const stagingDir = await fs.mkdtemp(path.join(os.tmpdir(), "igle-remote-import-"));
     const warnings: StageWarning[] = [];
     try {
+      // Classified from aaPanel's own root listing — one cheap extra call, done up front so the
+      // platform/lock reason is known before anything else, rather than re-walking the tree a
+      // second time after staging.
+      const classification = await classifyRemoteSite(provider, remoteSite.documentRoot);
+
       // Probed once per site rather than per file: on a shared VPS where many older sites never
       // got an SSL cert, trying HTTPS first for every single binary asset means every one of them
       // eats a full connect timeout before falling back to HTTP — confirmed live, where this
@@ -276,14 +287,21 @@ export class RemoteSiteImportService {
       existingSlugs.add(slug);
       const site = await this.siteService.createBlankSite({ name: remoteSite.domain, slug }, actor);
       await this.importService.importDirectory(site, stagingDir, actor);
-      // Always wire up the server assignment — that's what makes the imported content deployable
-      // and is never itself invalid. The domain is set separately because at least one real
-      // aaPanel-registered domain contains an underscore (non-standard per DNS, but genuinely
-      // live and aaPanel-accepted) and fails Igle's own stricter domain-format validation —
-      // confirmed live. Losing an otherwise-successful import over a domain-string format
-      // technicality would be worse than importing the real content and leaving the domain for
-      // the admin to sort out by hand.
-      await this.siteService.updateSettings(site, { deploymentTarget: "aapanel", serverId: server.id }, actor);
+      // Always wire up the server assignment (and the platform classification/lock) — none of
+      // that is ever invalid input, unlike the domain below. This is also the point a dynamic
+      // site actually becomes locked: importDirectory just ran against a brand-new, still-
+      // unlocked site, so the content-lock guard never blocked staging its own content in.
+      await this.siteService.updateSettings(
+        site,
+        {
+          deploymentTarget: "aapanel",
+          serverId: server.id,
+          platform: classification.platform,
+          contentLocked: classification.platform !== "static",
+          contentLockReason: classification.reason
+        },
+        actor
+      );
       try {
         await this.siteService.updateSettings(site, { domain: remoteSite.domain }, actor);
       } catch (error) {
@@ -293,7 +311,11 @@ export class RemoteSiteImportService {
         });
       }
 
-      return { siteId: site.id, warnings: warnings.map((warning) => `${warning.path}: ${warning.message}`) };
+      return {
+        siteId: site.id,
+        warnings: warnings.map((warning) => `${warning.path}: ${warning.message}`),
+        locked: classification.platform !== "static"
+      };
     } finally {
       await fs.rm(stagingDir, { recursive: true, force: true });
     }
@@ -368,6 +390,31 @@ async function withRetries<T>(fn: () => Promise<T>, attempts: number): Promise<T
   throw lastError;
 }
 
+/**
+ * Classifies a site as static (safe for Igle CMS to edit/deploy) or one of a few dynamic,
+ * database-driven CMS platforms Igle CMS only ever sees a stale file snapshot of — confirmed
+ * live against real aaPanel-hosted sites, including one genuine WordPress install and one MODX
+ * install (identifiable by its `manager`/`connectors`/`core` top-level layout). A single
+ * `GetDir` call against the document root is enough; there's no need to walk the rest of the tree
+ * just to decide this.
+ */
+async function classifyRemoteSite(provider: AaPanelProvider, remoteRoot: string): Promise<SiteClassification> {
+  const listing = await provider.listDirectory(remoteRoot);
+  const dirs = new Set(listing.directories);
+  const files = new Set(listing.files.map((file) => file.name));
+
+  if (files.has("wp-config.php") || (dirs.has("wp-content") && dirs.has("wp-includes"))) {
+    return { platform: "wordpress", reason: "WordPress site detected — imported for reference only. Editing and deploying are disabled to avoid breaking the live install." };
+  }
+  if (dirs.has("manager") && dirs.has("connectors") && (dirs.has("core") || files.has("config.core.php"))) {
+    return { platform: "modx", reason: "MODX site detected — imported for reference only. Editing and deploying are disabled to avoid breaking the live install." };
+  }
+  if (files.has("index.php") && !files.has("index.html") && !files.has("index.htm")) {
+    return { platform: "php-dynamic", reason: "Dynamic (PHP-driven) site detected — imported for reference only. Editing and deploying are disabled to avoid breaking the live install." };
+  }
+  return { platform: "static" };
+}
+
 /** One cheap connectivity check per site, so per-file fetches never pay for trying a dead protocol. */
 async function probeSiteProtocol(domain: string): Promise<"https" | "http"> {
   try {
@@ -409,7 +456,8 @@ async function fetchLiveAsset(domain: string, preferredProtocol: "https" | "http
 
 function summarize(outcomes: RemoteSiteImportOutcome[]): NonNullable<ServerRecord["autoImportSummary"]> {
   return {
-    imported: outcomes.filter((outcome) => outcome.status === "imported").length,
+    imported: outcomes.filter((outcome) => outcome.status === "imported" || outcome.status === "imported-locked").length,
+    locked: outcomes.filter((outcome) => outcome.status === "imported-locked").length,
     skipped: outcomes.filter((outcome) => outcome.status === "skipped-exists").length,
     excluded: outcomes.filter((outcome) => outcome.status === "excluded").length,
     failed: outcomes.filter((outcome) => outcome.status === "failed").length,

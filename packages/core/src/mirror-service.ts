@@ -2,6 +2,7 @@ import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { writeSiteMetadata } from "./metadata-store.js";
 import { ImportService } from "./import-service.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore } from "./state-store.js";
 import type { SiteRecord } from "./types.js";
 
@@ -32,6 +33,7 @@ export class MirrorService {
   /** Full-copies `sourceSiteId`'s current content into `site`, then links the two as a mirror pair. */
   async connect(site: SiteRecord, sourceSiteId: string, actor: Actor): Promise<{ revisionNumber: number; copiedPages: number }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     if (sourceSiteId === site.id) {
       throw new IgleError("INVALID_MIRROR", "A site can't mirror itself.", 400);
     }
@@ -84,6 +86,7 @@ export class MirrorService {
   /** Re-runs the full copy from the paired source into this site — only callable from the mirror side. */
   async resync(site: SiteRecord, actor: Actor): Promise<{ revisionNumber: number; copiedPages: number }> {
     assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
     if (!site.metadata.mirrorOfSiteId) {
       throw new IgleError("NOT_A_MIRROR", "Run re-sync from the mirror site, not the source.", 400);
     }

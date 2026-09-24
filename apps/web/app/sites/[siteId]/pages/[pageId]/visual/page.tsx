@@ -35,14 +35,21 @@ export default async function VisualEditorPage({ params }: { params: Promise<{ s
           Back to fields
         </Link>
       </div>
-      <VisualEditorClient
-        siteId={site.id}
-        siteSlug={site.slug}
-        pageId={page.id}
-        pageRoute={page.route}
-        previewOrigin={previewOrigin}
-        pages={pages}
-      />
+      {site.metadata.contentLocked ? (
+        <article className="card" style={{ borderColor: "var(--warn)" }}>
+          <strong>This site is locked.</strong> {site.metadata.contentLockReason ?? "Editing is disabled."} The visual editor
+          isn&apos;t available for locked sites.
+        </article>
+      ) : (
+        <VisualEditorClient
+          siteId={site.id}
+          siteSlug={site.slug}
+          pageId={page.id}
+          pageRoute={page.route}
+          previewOrigin={previewOrigin}
+          pages={pages}
+        />
+      )}
     </>
   );
 }
