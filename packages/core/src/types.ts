@@ -166,6 +166,8 @@ export interface ServerRecord {
         imported: number;
         /** Imported but came in as a locked (WordPress/MODX/other dynamic) site — a subset of `imported`, broken out so the admin can see at a glance how many need manual review. */
         locked: number;
+        /** Already-tracked sites re-checked against the server's real content and newly locked as a result — see RemoteSiteImportService.reclassifyExistingSite. */
+        relocked: number;
         skipped: number;
         excluded: number;
         failed: number;

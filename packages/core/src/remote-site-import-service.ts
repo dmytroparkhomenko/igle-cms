@@ -6,11 +6,11 @@ import { IgleError, type Actor } from "@igle/shared";
 import { ImportService } from "./import-service.js";
 import { SiteService } from "./site-service.js";
 import { JsonStateStore } from "./state-store.js";
-import type { ServerRecord } from "./types.js";
+import type { ServerRecord, SiteRecord } from "./types.js";
 
 export interface RemoteSiteImportOutcome {
   domain: string;
-  status: "imported" | "imported-locked" | "skipped-exists" | "excluded" | "failed";
+  status: "imported" | "imported-locked" | "relocked" | "skipped-exists" | "excluded" | "failed";
   siteId?: string;
   warnings?: string[];
   error?: string;
@@ -141,6 +141,13 @@ export class RemoteSiteImportService {
     const existingDomains = new Set(state.sites.map((item) => item.metadata.domain).filter((domain): domain is string => Boolean(domain)));
     const existingSlugs = new Set(state.sites.map((item) => item.slug));
     const excludedDomains = new Set((server.autoImportExcludedDomains ?? []).map((domain) => domain.toLowerCase()));
+    // Only sites actually deployed to *this* server are eligible for re-classification below — a
+    // domain tracked under a different server isn't ours to touch, even if the name matches.
+    const existingSitesOnThisServer = new Map(
+      state.sites
+        .filter((item) => item.metadata.domain && item.metadata.deploymentTarget === "aapanel" && item.metadata.serverId === server.id)
+        .map((item) => [item.metadata.domain as string, item])
+    );
 
     const outcomes: RemoteSiteImportOutcome[] = [];
     // A real run confirmed this matters: one oversized site's sustained request volume tripped
@@ -149,7 +156,7 @@ export class RemoteSiteImportService {
     // of the list for nothing while continuing to hit a server that was already signalling
     // distress. A short pause between sites reduces the chance of tripping it in the first place;
     // the circuit breaker below stops the run once a few in a row fail the same way, leaving the
-    // untried remainder for a later "Import sites now" click instead of also failing them.
+    // untried remainder for a later "Sync sites" click instead of also failing them.
     let consecutiveFailures = 0;
     for (const remoteSite of remoteSites) {
       if (remoteSite.domain && excludedDomains.has(remoteSite.domain.toLowerCase())) {
@@ -158,7 +165,7 @@ export class RemoteSiteImportService {
         onResult?.(outcome);
         continue;
       }
-      if (!remoteSite.domain || existingDomains.has(remoteSite.domain)) {
+      if (!remoteSite.domain) {
         const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: "skipped-exists" };
         outcomes.push(outcome);
         onResult?.(outcome);
@@ -168,6 +175,35 @@ export class RemoteSiteImportService {
         onResult?.({ domain: remoteSite.domain, status: "failed", error: "Stopped early after repeated failures — likely rate-limited by the panel. Try again later." });
         break;
       }
+
+      const existingSite = existingSitesOnThisServer.get(remoteSite.domain);
+      if (existingSite) {
+        // Already tracked here — re-check its platform/lock instead of re-importing content
+        // (which would clobber any local edits). This is what makes "Sync sites" a real
+        // two-way sync: it also catches a site that was imported before platform detection
+        // existed, or whose real content changed since the last check.
+        if (outcomes.length > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const relocked = await this.reclassifyExistingSite(provider, remoteSite, existingSite, actor);
+          const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: relocked ? "relocked" : "skipped-exists", siteId: existingSite.id };
+          outcomes.push(outcome);
+          onResult?.(outcome);
+          consecutiveFailures = 0;
+        } catch (error) {
+          const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: "failed", error: error instanceof Error ? error.message : "Re-check failed." };
+          outcomes.push(outcome);
+          onResult?.(outcome);
+          consecutiveFailures += 1;
+        }
+        continue;
+      }
+      if (existingDomains.has(remoteSite.domain)) {
+        const outcome: RemoteSiteImportOutcome = { domain: remoteSite.domain, status: "skipped-exists" };
+        outcomes.push(outcome);
+        onResult?.(outcome);
+        continue;
+      }
+
       if (outcomes.length > 0) await new Promise((resolve) => setTimeout(resolve, 2000));
       try {
         const { siteId, warnings, locked } = await this.importOneSite(provider, remoteSite, server, existingSlugs, actor, onProgress);
@@ -188,7 +224,7 @@ export class RemoteSiteImportService {
 
   /**
    * Called on a timer from apps/worker — finds every aaPanel server flagged autoImportStatus
-   * "pending" (set the instant a server is added, or when an admin clicks "Import sites now") and
+   * "pending" (set the instant a server is added, or when an admin clicks "Sync sites") and
    * runs its import, persisting progress on the ServerRecord itself so the Servers page can show
    * it without any separate job-tracking store. Never called from a request handler: a shared VPS
    * can host dozens of sites, and a full import can run well past any reasonable HTTP timeout.
@@ -240,6 +276,7 @@ export class RemoteSiteImportService {
           record.autoImportSummary = {
             imported: 0,
             locked: 0,
+            relocked: 0,
             skipped: 0,
             excluded: 0,
             failed: 0,
@@ -298,7 +335,8 @@ export class RemoteSiteImportService {
           serverId: server.id,
           platform: classification.platform,
           contentLocked: classification.platform !== "static",
-          contentLockReason: classification.reason
+          contentLockReason: classification.reason,
+          contentLockSource: "auto"
         },
         actor
       );
@@ -319,6 +357,46 @@ export class RemoteSiteImportService {
     } finally {
       await fs.rm(stagingDir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Re-checks an already-imported site's platform against the server's real, current content —
+   * one cheap directory listing, no re-staging. Confirmed necessary live: sites imported before
+   * platform detection existed (or before this particular server's content changed) sat fully
+   * unlocked with no protection despite being real WordPress/MODX installs.
+   *
+   * `contentLocked` is only ever touched here when its `contentLockSource` isn't "manual" — an
+   * admin's explicit lock or unlock in Site Settings always wins over what re-detection finds,
+   * in both directions. `platform` itself is always refreshed, since it's just a descriptive
+   * label with no access-control effect on its own.
+   *
+   * Returns true when this call is what just locked the site (for outcome reporting) — false for
+   * "already fine", "already locked", or "manually decided, left alone".
+   */
+  private async reclassifyExistingSite(provider: AaPanelProvider, remoteSite: AaPanelSiteSummary, site: SiteRecord, actor: Actor): Promise<boolean> {
+    const classification = await classifyRemoteSite(provider, remoteSite.documentRoot);
+    const wasLocked = site.metadata.contentLocked;
+    const platformChanged = classification.platform !== site.metadata.platform;
+    const lockIsManual = site.metadata.contentLockSource === "manual";
+    const desiredLock = classification.platform !== "static";
+
+    if (!platformChanged && (lockIsManual || desiredLock === wasLocked)) return false;
+
+    await this.siteService.updateSettings(
+      site,
+      {
+        platform: classification.platform,
+        ...(lockIsManual
+          ? {}
+          : {
+              contentLocked: desiredLock,
+              contentLockReason: classification.reason,
+              contentLockSource: "auto" as const
+            })
+      },
+      actor
+    );
+    return !lockIsManual && desiredLock && !wasLocked;
   }
 }
 
@@ -458,6 +536,7 @@ function summarize(outcomes: RemoteSiteImportOutcome[]): NonNullable<ServerRecor
   return {
     imported: outcomes.filter((outcome) => outcome.status === "imported" || outcome.status === "imported-locked").length,
     locked: outcomes.filter((outcome) => outcome.status === "imported-locked").length,
+    relocked: outcomes.filter((outcome) => outcome.status === "relocked").length,
     skipped: outcomes.filter((outcome) => outcome.status === "skipped-exists").length,
     excluded: outcomes.filter((outcome) => outcome.status === "excluded").length,
     failed: outcomes.filter((outcome) => outcome.status === "failed").length,

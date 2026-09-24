@@ -218,7 +218,7 @@ export class ServerService {
     });
   }
 
-  /** Manually (re-)queues an aaPanel server's site import — the same background job that runs automatically right after a server is added (see RemoteSiteImportService), for retrying after a failure or picking up sites added on the panel since. */
+  /** Manually (re-)queues an aaPanel server sync — the same background job that runs automatically right after a server is added (see RemoteSiteImportService), for retrying after a failure, picking up new sites added on the panel since, or re-checking already-tracked sites for a platform change (see reclassifyExistingSite). */
   async requestImport(serverId: string, actor: Actor): Promise<void> {
     assertCan(actor, "servers.manage");
     await this.stateStore.update((state) => {

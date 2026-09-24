@@ -50,6 +50,8 @@ export const siteMetadataSchema = z.object({
   /** When true, every content-mutating action (editing, deploying, importing over, etc.) is refused — see assertSiteEditable. Sites deploying via CloudPanel wipe the document root before extracting a build, and the aaPanel build strips .php/.htaccess files, so deploying a dynamic site's stale snapshot would destroy the real live install. */
   contentLocked: z.boolean().default(false),
   contentLockReason: z.string().optional(),
+  /** Whether the current contentLocked value came from auto-detection or an admin's explicit choice — a re-sync against the server may refresh an "auto" lock state, but never overrides a "manual" one in either direction. */
+  contentLockSource: z.enum(["auto", "manual"]).optional(),
   /** Site-wide canonical target for the "domain gluing" SEO strategy (consolidating an aged/dropped domain into a newly-registered replacement) — every page without its own CMS-written canonical gets `${canonicalDomain}${page.route}` at build time. A page the CMS itself set a canonical on is left alone. */
   canonicalDomain: z.string().optional(),
   /** Explicit cross-domain hreflang alternates for the same "domain gluing" strategy — when set, this is the authoritative source for hreflang injection (full manual control), overriding the implicit mirror-partner-based default. Each page gets one <link rel="alternate"> per target plus a self-reference. */

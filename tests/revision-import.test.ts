@@ -40,6 +40,22 @@ describe("revision and import services", () => {
     expect((await runtime.revisionService.integrity(site)).ok).toBe(true);
   });
 
+  it("preserves an already-assigned domain across a settings save that doesn't mention it", async () => {
+    const runtime = await testRuntime();
+    const site = await runtime.siteService.createBlankSite({ name: "Domain Site", slug: "domain-site" }, admin);
+    await runtime.siteService.updateSettings(site, { domain: "example.com" }, admin);
+    expect(site.metadata.domain).toBe("example.com");
+
+    // The real Site Settings form has no domain field at all (domain is assigned separately via
+    // DomainService) — this is exactly that shape of call, and must not touch domain.
+    await runtime.siteService.updateSettings(site, { name: "Domain Site", https: true }, admin);
+    expect(site.metadata.domain).toBe("example.com");
+
+    // An explicit empty string is still how a caller clears it on purpose.
+    await runtime.siteService.updateSettings(site, { domain: "" }, admin);
+    expect(site.metadata.domain).toBeUndefined();
+  });
+
   it("rejects dangerous import paths", async () => {
     const runtime = await testRuntime();
     expect(runtime.importService.validateEntry("../escape.html").ok).toBe(false);

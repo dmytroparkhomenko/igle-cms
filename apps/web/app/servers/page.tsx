@@ -112,7 +112,7 @@ export default async function ServersPage({
       ) : null}
       {importQueued ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
-          Import queued — its sites will start appearing here within a few seconds.
+          Sync queued — new sites will start appearing here within a few seconds, and already-tracked ones get re-checked for WordPress/MODX.
         </article>
       ) : null}
       {exclusionsUpdated ? (
@@ -366,7 +366,7 @@ export default async function ServersPage({
                       disabled={server.autoImportStatus === "running"}
                       style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}
                     >
-                      {server.autoImportStatus === "running" ? "Importing…" : "Import sites now"}
+                      {server.autoImportStatus === "running" ? "Syncing…" : "Sync sites"}
                     </button>
                   </form>
                 ) : null}
@@ -500,7 +500,7 @@ export default async function ServersPage({
 
 function importStatusLabel(server: {
   autoImportStatus?: string | undefined;
-  autoImportSummary?: { imported: number; locked: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
+  autoImportSummary?: { imported: number; locked: number; relocked: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
 }): string {
   const summary = server.autoImportSummary;
   switch (server.autoImportStatus) {
@@ -510,7 +510,7 @@ function importStatusLabel(server: {
       return "Importing sites from this server…";
     case "done":
       if (!summary) return "Site import finished.";
-      return `Site import: ${summary.imported} imported${summary.locked > 0 ? ` (${summary.locked} locked — WordPress/MODX)` : ""}, ${summary.skipped} already here${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;
+      return `Site import: ${summary.imported} imported${summary.locked > 0 ? ` (${summary.locked} locked — WordPress/MODX)` : ""}, ${summary.skipped} already here${summary.relocked > 0 ? ` (${summary.relocked} newly locked on re-check)` : ""}${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;
     case "failed": {
       const message = summary?.errors[0]?.message;
       return `Site import failed${message ? `: ${message}` : "."}`;

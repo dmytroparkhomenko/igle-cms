@@ -44,6 +44,9 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     // refuses from a non-admin actor).
     if (form.get("contentLockedFieldPresent") !== null) {
       settings.contentLocked = form.get("contentLocked") === "on";
+      // A human made this choice — a later "Sync sites" re-sync must never silently
+      // overwrite it in either direction.
+      settings.contentLockSource = "manual";
     }
 
     const canonicalDomainRaw = form.get("canonicalDomain");

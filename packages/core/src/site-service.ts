@@ -30,6 +30,8 @@ export interface UpdateSiteSettingsInput {
   platform?: SiteMetadata["platform"] | undefined;
   contentLocked?: boolean | undefined;
   contentLockReason?: string | undefined;
+  /** Who's setting contentLocked — "auto" (aaPanel detection/re-sync) or "manual" (an admin's explicit choice in Site Settings). Required whenever contentLocked is set, since it decides whether a future re-sync is allowed to touch this site's lock state again. */
+  contentLockSource?: SiteMetadata["contentLockSource"] | undefined;
   /** Site-wide canonical target for the domain-gluing strategy — see siteMetadataSchema. Pass an empty string to clear it. */
   canonicalDomain?: string | undefined;
   /** Explicit hreflang alternates for the domain-gluing strategy — replaces the whole list. */
@@ -247,7 +249,13 @@ export class SiteService {
     const metadata: SiteMetadata = {
       ...metadataWithoutServerId,
       name: input.name?.trim() || site.metadata.name,
-      domain: domain || undefined,
+      // Only touch domain when the caller actually sent one (even an explicit empty string, to
+      // clear it) — `domain: domain || undefined` unconditionally wiped it on every call that
+      // didn't happen to include it, which is most of them (the main Site Settings form has no
+      // domain field at all; a domain is normally assigned separately via DomainService). This
+      // was live-reproduced twice: a routine settings save and this session's own reclassify
+      // sync both erased a real site's already-assigned domain.
+      domain: input.domain !== undefined ? domain || undefined : site.metadata.domain,
       urlStyle: input.urlStyle ?? site.metadata.urlStyle,
       wwwMode: input.wwwMode ?? site.metadata.wwwMode,
       https: input.https ?? site.metadata.https,
@@ -259,6 +267,7 @@ export class SiteService {
       platform: input.platform ?? site.metadata.platform,
       contentLocked: input.contentLocked ?? site.metadata.contentLocked,
       contentLockReason: input.contentLockReason ?? site.metadata.contentLockReason,
+      contentLockSource: input.contentLockSource ?? site.metadata.contentLockSource,
       canonicalDomain: input.canonicalDomain !== undefined ? input.canonicalDomain.trim() || undefined : site.metadata.canonicalDomain,
       hreflangTargets: input.hreflangTargets ?? site.metadata.hreflangTargets,
       updatedAt: new Date().toISOString()
