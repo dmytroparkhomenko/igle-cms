@@ -1,6 +1,6 @@
 import path from "node:path";
 import pino from "pino";
-import { JsonStateStore, TaskService } from "@igle/core";
+import { ImportService, JsonStateStore, RemoteSiteImportService, RevisionService, SiteService, TaskService } from "@igle/core";
 
 const logger = pino({ name: "igle-worker" });
 
@@ -14,6 +14,10 @@ logger.info(
 const dataDir = process.env.IGLE_DATA_DIR ?? path.resolve(process.cwd(), "../../data");
 const stateStore = new JsonStateStore(dataDir);
 const taskService = new TaskService(dataDir, stateStore);
+const revisionService = new RevisionService(stateStore);
+const siteService = new SiteService(dataDir, stateStore, revisionService);
+const importService = new ImportService(stateStore, revisionService);
+const remoteSiteImportService = new RemoteSiteImportService(stateStore, siteService, importService);
 
 // Hourly is plenty of resolution for a check that only ever fires once, on Sundays — this just
 // makes sure a worker restart earlier in the day still catches it promptly rather than waiting.
@@ -34,6 +38,32 @@ void checkWeeklyTaskArchiveSweep();
 setInterval(() => {
   void checkWeeklyTaskArchiveSweep();
 }, ARCHIVE_SWEEP_CHECK_INTERVAL_MS);
+
+// Short interval so "connect a server → its sites show up automatically" actually feels
+// immediate — a full import can still take a while per server, but this makes sure it starts
+// within seconds of the server being added rather than waiting on the next hourly tick.
+const AAPANEL_IMPORT_CHECK_INTERVAL_MS = 15 * 1000;
+
+async function checkPendingAaPanelImports(): Promise<void> {
+  try {
+    await remoteSiteImportService.processPendingImports(
+      (progress) => {
+        logger.info(progress, "aaPanel site import progress.");
+      },
+      (outcome) => {
+        if (outcome.status === "failed") logger.error(outcome, "aaPanel site import failed for one domain.");
+        else logger.info(outcome, "aaPanel site import result.");
+      }
+    );
+  } catch (error) {
+    logger.error({ error }, "aaPanel site import sweep failed.");
+  }
+}
+
+void checkPendingAaPanelImports();
+setInterval(() => {
+  void checkPendingAaPanelImports();
+}, AAPANEL_IMPORT_CHECK_INTERVAL_MS);
 
 setInterval(() => {
   logger.debug("worker heartbeat");

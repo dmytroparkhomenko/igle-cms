@@ -151,6 +151,27 @@ export interface ServerRecord {
   /** The IP a domain's DNS record should point at to reach this server — auto-detected from baseUrl/sshHost when it's a plain IP, but overridable since that address isn't always the same host a domain should resolve to. */
   publicIp?: string | undefined;
   createdAt: string;
+  // aaPanel only — auto-import of the panel's existing sites into Igle CMS. "pending" is set the
+  // moment the server is added (or the admin re-requests it); the worker (RemoteSiteImportService)
+  // picks it up in the background rather than running inline in the add-server request, since a
+  // shared VPS can host dozens of sites and a full import can take well past any reasonable HTTP
+  // timeout.
+  autoImportStatus?: "pending" | "running" | "done" | "failed" | undefined;
+  autoImportActorId?: string | undefined;
+  autoImportActorEmail?: string | undefined;
+  autoImportStartedAt?: string | undefined;
+  autoImportFinishedAt?: string | undefined;
+  autoImportSummary?:
+    | {
+        imported: number;
+        skipped: number;
+        excluded: number;
+        failed: number;
+        errors: Array<{ domain: string; message: string }>;
+      }
+    | undefined;
+  /** Domains on this panel that should never be auto-imported — e.g. an unrelated app registered as a "site" in aaPanel for its own reasons, not a real Igle CMS site. */
+  autoImportExcludedDomains?: string[] | undefined;
 }
 
 /** One Cloudflare account's credentials — kept separate per account (not per server) since the whole point is spreading domains across accounts that share no ownership signal. */

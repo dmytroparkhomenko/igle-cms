@@ -73,6 +73,20 @@ export interface AaPanelSite {
   created: boolean;
 }
 
+export interface AaPanelDirListing {
+  directories: string[];
+  files: Array<{ name: string; size: number }>;
+}
+
+interface AaPanelGetDirResponse extends AaPanelResponse {
+  DIR?: string[];
+  FILES?: string[];
+}
+
+interface AaPanelGetFileBodyResponse extends AaPanelResponse {
+  data?: string;
+}
+
 /**
  * Talks to a real aaPanel install over its signed HTTP API. Verified against aaPanel's own
  * demo.py/demo.php reference clients (auth scheme) and the community AzozzALFiras/aapanel-api
@@ -250,6 +264,38 @@ export class AaPanelProvider {
     }
   }
 
+  /**
+   * Read-only: one directory's immediate children (not recursive). `/files?action=Zip` and the
+   * whole create_download_url share-link flow both 404/dead-end on at least one real panel
+   * (likely blocked at the nginx layer as file-exfiltration hardening — GetDir/GetFileBody stay
+   * unaffected), so a full-site export walks the tree via repeated GetDir + GetFileBody calls
+   * instead of zipping and downloading. Confirmed live: GetDir returns every entry in one shot
+   * for a real 78-item directory, with no pagination param needed.
+   */
+  async listDirectory(remotePath: string): Promise<AaPanelDirListing> {
+    const result = await this.call<AaPanelGetDirResponse>("/files?action=GetDir", { path: remotePath });
+    return {
+      directories: (result.DIR ?? []).map(parseEntryName),
+      files: (result.FILES ?? []).map((row) => ({ name: parseEntryName(row), size: parseEntrySize(row) }))
+    };
+  }
+
+  /**
+   * Read-only: a text file's contents, or undefined if aaPanel refuses it as a binary format
+   * ("The file format does not support online editing!" — confirmed live against a real .ico/
+   * .webp file). Callers should fetch binary files from the site's own live URL instead, since
+   * aaPanel has no confirmed raw-binary-download route (see listDirectory's comment).
+   */
+  async readTextFile(remotePath: string): Promise<string | undefined> {
+    try {
+      const result = await this.call<AaPanelGetFileBodyResponse>("/files?action=GetFileBody", { path: remotePath });
+      return result.data ?? "";
+    } catch (error) {
+      if (error instanceof AaPanelError && /does not support online editing/i.test(error.message)) return undefined;
+      throw error;
+    }
+  }
+
   private origin(): string {
     return this.config.baseUrl.replace(/\/$/, "");
   }
@@ -291,4 +337,14 @@ export class AaPanelProvider {
 
 function defaultDocumentRoot(domain: string): string {
   return `/www/wwwroot/${domain}`;
+}
+
+/** GetDir rows are "name;size;mtime;perms;owner;group;...", semicolon-delimited — confirmed live. */
+function parseEntryName(row: string): string {
+  return row.split(";")[0] ?? row;
+}
+
+function parseEntrySize(row: string): number {
+  const size = Number(row.split(";")[1]);
+  return Number.isFinite(size) ? size : 0;
 }

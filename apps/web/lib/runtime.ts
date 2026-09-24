@@ -12,6 +12,7 @@ import { MirrorService } from "../../../packages/core/src/mirror-service";
 import { NotificationService } from "../../../packages/core/src/notification-service";
 import { PageService } from "../../../packages/core/src/page-service";
 import { RedirectService } from "../../../packages/core/src/redirect-service";
+import { RemoteSiteImportService } from "../../../packages/core/src/remote-site-import-service";
 import { RevisionService } from "../../../packages/core/src/revision-service";
 import { ScriptService } from "../../../packages/core/src/script-service";
 import { SEOService } from "../../../packages/core/src/seo-service";
@@ -49,6 +50,7 @@ const verificationService = new VerificationService(revisionService);
 const affiliateLinkService = new AffiliateLinkService(stateStore);
 const mirrorService = new MirrorService(stateStore, importService, revisionService);
 const vultrAccountService = new VultrAccountService(stateStore);
+const remoteSiteImportService = new RemoteSiteImportService(stateStore, siteService, importService);
 
 // First-run bootstrap: with no users yet, ADMIN_EMAIL/ADMIN_PASSWORD (set once in .env) creates
 // the first administrator and seeds the shared team password. A no-op on every run after that.
@@ -95,5 +97,6 @@ export const runtime = {
   cloudflareAccountService,
   domainService,
   mirrorService,
-  vultrAccountService
+  vultrAccountService,
+  remoteSiteImportService
 };

@@ -17,6 +17,9 @@ export interface ServerSummary {
   credentialPreview: string;
   siteCount: number;
   createdAt: string;
+  autoImportStatus?: ServerRecord["autoImportStatus"];
+  autoImportSummary?: ServerRecord["autoImportSummary"];
+  autoImportExcludedDomains?: ServerRecord["autoImportExcludedDomains"];
 }
 
 export interface AddServerInput {
@@ -54,7 +57,10 @@ export class ServerService {
         publicIp: server.publicIp,
         credentialPreview: credentialPreviewFor(server),
         siteCount: state.sites.filter((site) => site.metadata.serverId === server.id).length,
-        createdAt: server.createdAt
+        createdAt: server.createdAt,
+        autoImportStatus: server.autoImportStatus,
+        autoImportSummary: server.autoImportSummary,
+        autoImportExcludedDomains: server.autoImportExcludedDomains
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -121,7 +127,13 @@ export class ServerService {
         apiKey,
         restricted: input.restricted,
         ...(publicIp ? { publicIp } : {}),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        // Every site already on the panel gets pulled in automatically — the worker
+        // (RemoteSiteImportService) picks this up in the background moments after the server is
+        // added, so it's live without the admin having to do anything else.
+        autoImportStatus: "pending",
+        autoImportActorId: actor.id,
+        autoImportActorEmail: actor.email
       };
     }
 
@@ -203,6 +215,36 @@ export class ServerService {
         if (input.sshPassword?.trim()) server.sshPassword = input.sshPassword.trim();
         if (input.sshPrivateKey?.trim()) server.sshPrivateKey = input.sshPrivateKey.trim();
       }
+    });
+  }
+
+  /** Manually (re-)queues an aaPanel server's site import — the same background job that runs automatically right after a server is added (see RemoteSiteImportService), for retrying after a failure or picking up sites added on the panel since. */
+  async requestImport(serverId: string, actor: Actor): Promise<void> {
+    assertCan(actor, "servers.manage");
+    await this.stateStore.update((state) => {
+      const server = state.servers.find((item) => item.id === serverId);
+      if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
+      if (server.kind !== "aapanel") {
+        throw new IgleError("VALIDATION_ERROR", "Only aaPanel servers support automatic site import.", 400);
+      }
+      if (server.autoImportStatus === "running") {
+        throw new IgleError("IMPORT_IN_PROGRESS", "An import is already running for this server.", 409);
+      }
+      server.autoImportStatus = "pending";
+      server.autoImportActorId = actor.id;
+      server.autoImportActorEmail = actor.email;
+      server.autoImportSummary = undefined;
+    });
+  }
+
+  /** Domains on this panel that auto-import should always skip — e.g. an unrelated app registered as a "site" in aaPanel for its own reasons, not real Igle CMS content. Replaces the whole list. */
+  async setAutoImportExclusions(serverId: string, domains: string[], actor: Actor): Promise<void> {
+    assertCan(actor, "servers.manage");
+    const cleaned = [...new Set(domains.map((domain) => domain.trim().toLowerCase()).filter(Boolean))];
+    await this.stateStore.update((state) => {
+      const server = state.servers.find((item) => item.id === serverId);
+      if (!server) throw new IgleError("SERVER_NOT_FOUND", "Server was not found.", 404);
+      server.autoImportExcludedDomains = cleaned;
     });
   }
 

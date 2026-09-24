@@ -12,6 +12,8 @@ export default async function ServersPage({
     updated?: string;
     removed?: string;
     testOk?: string;
+    importQueued?: string;
+    exclusionsUpdated?: string;
     vultrAccountId?: string;
     prefillName?: string;
     prefillHost?: string;
@@ -29,6 +31,8 @@ export default async function ServersPage({
     updated,
     removed,
     testOk,
+    importQueued,
+    exclusionsUpdated,
     vultrAccountId,
     prefillName,
     prefillHost,
@@ -104,6 +108,16 @@ export default async function ServersPage({
       {testOk ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
           Connected — the server returned {testOk} site{testOk === "1" ? "" : "s"} for this credential.
+        </article>
+      ) : null}
+      {importQueued ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
+          Import queued — its sites will start appearing here within a few seconds.
+        </article>
+      ) : null}
+      {exclusionsUpdated ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16, maxWidth: 640 }}>
+          Import exclusions saved.
         </article>
       ) : null}
       {vultrError ? (
@@ -335,6 +349,7 @@ export default async function ServersPage({
                   {server.credentialPreview} · {server.siteCount} site{server.siteCount === 1 ? "" : "s"}
                   {server.publicIp ? ` · DNS target ${server.publicIp}` : " · no public IP set for DNS"}
                 </p>
+                {server.kind === "aapanel" && server.autoImportStatus ? <p className="muted" style={{ fontSize: 12.5 }}>{importStatusLabel(server)}</p> : null}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                 <form method="post" action="/api/settings/aapanel/test">
@@ -343,6 +358,18 @@ export default async function ServersPage({
                     Test connection
                   </button>
                 </form>
+                {server.kind === "aapanel" ? (
+                  <form method="post" action={`/api/servers/${server.id}/import`}>
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={server.autoImportStatus === "running"}
+                      style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}
+                    >
+                      {server.autoImportStatus === "running" ? "Importing…" : "Import sites now"}
+                    </button>
+                  </form>
+                ) : null}
                 {server.siteCount === 0 ? (
                   <form method="post" action={`/api/servers/${server.id}/delete`}>
                     <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
@@ -436,6 +463,28 @@ export default async function ServersPage({
                   Save changes
                 </button>
               </form>
+              {server.kind === "aapanel" ? (
+                <form
+                  method="post"
+                  action={`/api/servers/${server.id}/import-exclusions`}
+                  style={{ display: "grid", gap: 8, marginTop: 16, maxWidth: 420 }}
+                >
+                  <div className="field">
+                    <label htmlFor={`importExclusions-${server.id}`}>Never auto-import these domains</label>
+                    <textarea
+                      id={`importExclusions-${server.id}`}
+                      name="domains"
+                      rows={3}
+                      defaultValue={(server.autoImportExcludedDomains ?? []).join("\n")}
+                      placeholder={"One domain per line — e.g. an unrelated app registered as a \"site\" in aaPanel, not real Igle CMS content."}
+                      style={{ font: "inherit", fontSize: 12.5, padding: 8, borderRadius: 6, border: "1px solid var(--line)" }}
+                    />
+                  </div>
+                  <button className="button" type="submit" style={{ justifySelf: "start", fontSize: 12.5 }}>
+                    Save exclusions
+                  </button>
+                </form>
+              ) : null}
             </details>
           </div>
         ))}
@@ -447,4 +496,26 @@ export default async function ServersPage({
       </div>
     </>
   );
+}
+
+function importStatusLabel(server: {
+  autoImportStatus?: string | undefined;
+  autoImportSummary?: { imported: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
+}): string {
+  const summary = server.autoImportSummary;
+  switch (server.autoImportStatus) {
+    case "pending":
+      return "Site import queued.";
+    case "running":
+      return "Importing sites from this server…";
+    case "done":
+      if (!summary) return "Site import finished.";
+      return `Site import: ${summary.imported} imported, ${summary.skipped} already here${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;
+    case "failed": {
+      const message = summary?.errors[0]?.message;
+      return `Site import failed${message ? `: ${message}` : "."}`;
+    }
+    default:
+      return "";
+  }
 }

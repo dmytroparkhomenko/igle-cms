@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS worker
-RUN apk add --no-cache python3 make g++
+# git: RemoteSiteImportService reuses SiteService/ImportService, which shell out to git for every
+# revision commit — confirmed live as "spawn git ENOENT" once the worker started creating sites.
+RUN apk add --no-cache git python3 make g++
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 WORKDIR /app
 
