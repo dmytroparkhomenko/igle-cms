@@ -76,15 +76,15 @@ export class AuthService {
    * from ADMIN_EMAIL/ADMIN_PASSWORD env vars, never from a request (no actor exists yet to check).
    */
   async bootstrapFirstAdminIfNeeded(email: string, password: string): Promise<UserRecord | undefined> {
-    const state = await this.stateStore.read();
-    if (state.users.length > 0) return undefined;
-    const passwordHash = await bcrypt.hash(password, 12);
-    const user = this.createUserRecordWithHash(email, passwordHash, email, "administrator");
-    state.users.push(user);
-    state.teamPasswordHash = passwordHash;
-    state.teamPasswordUpdatedAt = new Date().toISOString();
-    await this.stateStore.write(state);
-    return user;
+    return this.stateStore.update(async (state) => {
+      if (state.users.length > 0) return undefined;
+      const passwordHash = await bcrypt.hash(password, 12);
+      const user = this.createUserRecordWithHash(email, passwordHash, email, "administrator");
+      state.users.push(user);
+      state.teamPasswordHash = passwordHash;
+      state.teamPasswordUpdatedAt = new Date().toISOString();
+      return user;
+    });
   }
 
   async hasTeamPassword(): Promise<boolean> {
@@ -142,19 +142,19 @@ export class AuthService {
 
   async addTeamMember(input: { email: string; name?: string; role: "administrator" | "editor" }, actor: Actor): Promise<UserRecord> {
     assertCan(actor, "users.manage");
-    const state = await this.stateStore.read();
-    if (!state.teamPasswordHash) {
-      throw new IgleError("TEAM_PASSWORD_NOT_SET", "Set a team password before registering members.", 400);
-    }
-    const email = input.email.trim().toLowerCase();
-    if (!email || !email.includes("@")) throw new IgleError("VALIDATION_ERROR", "Enter a valid email address.", 400);
-    if (state.users.some((user) => user.email.toLowerCase() === email)) {
-      throw new IgleError("USER_EXISTS", "A member with this email is already registered.", 409);
-    }
-    const user = this.createUserRecordWithHash(email, state.teamPasswordHash, input.name?.trim() || email, input.role);
-    state.users.push(user);
-    await this.stateStore.write(state);
-    return user;
+    return this.stateStore.update((state) => {
+      if (!state.teamPasswordHash) {
+        throw new IgleError("TEAM_PASSWORD_NOT_SET", "Set a team password before registering members.", 400);
+      }
+      const email = input.email.trim().toLowerCase();
+      if (!email || !email.includes("@")) throw new IgleError("VALIDATION_ERROR", "Enter a valid email address.", 400);
+      if (state.users.some((user) => user.email.toLowerCase() === email)) {
+        throw new IgleError("USER_EXISTS", "A member with this email is already registered.", 409);
+      }
+      const user = this.createUserRecordWithHash(email, state.teamPasswordHash, input.name?.trim() || email, input.role);
+      state.users.push(user);
+      return user;
+    });
   }
 
   async updateTeamMemberRole(userId: string, role: "administrator" | "editor", actor: Actor): Promise<void> {
@@ -201,14 +201,14 @@ export class AuthService {
   }
 
   async createFirstAdministrator(input: { email: string; password: string; name?: string }): Promise<UserRecord> {
-    const state = await this.stateStore.read();
-    if (state.users.length > 0) {
-      throw new IgleError("SETUP_ALREADY_COMPLETE", "The first administrator already exists.", 409);
-    }
-    const user = await this.createUserRecord(input.email, input.password, input.name ?? input.email, "administrator");
-    state.users.push(user);
-    await this.stateStore.write(state);
-    return user;
+    return this.stateStore.update(async (state) => {
+      if (state.users.length > 0) {
+        throw new IgleError("SETUP_ALREADY_COMPLETE", "The first administrator already exists.", 409);
+      }
+      const user = await this.createUserRecord(input.email, input.password, input.name ?? input.email, "administrator");
+      state.users.push(user);
+      return user;
+    });
   }
 
   async inviteUser(input: { email: string; role: "administrator" | "editor"; expiresHours?: number }): Promise<{ inviteId: string; token: string; expiresAt: string }> {
@@ -229,15 +229,15 @@ export class AuthService {
 
   async acceptInvite(input: { token: string; password: string; name?: string }): Promise<UserRecord> {
     const tokenHash = hash(input.token);
-    const state = await this.stateStore.read();
-    const invite = state.invites.find((item) => item.tokenHash === tokenHash && !item.acceptedAt);
-    if (!invite) throw new IgleError("INVITE_NOT_FOUND", "Invite link is invalid.", 404);
-    if (new Date(invite.expiresAt).getTime() < Date.now()) throw new IgleError("INVITE_EXPIRED", "Invite link has expired.", 410);
-    const user = await this.createUserRecord(invite.email, input.password, input.name ?? invite.email, invite.role);
-    invite.acceptedAt = new Date().toISOString();
-    state.users.push(user);
-    await this.stateStore.write(state);
-    return user;
+    return this.stateStore.update(async (state) => {
+      const invite = state.invites.find((item) => item.tokenHash === tokenHash && !item.acceptedAt);
+      if (!invite) throw new IgleError("INVITE_NOT_FOUND", "Invite link is invalid.", 404);
+      if (new Date(invite.expiresAt).getTime() < Date.now()) throw new IgleError("INVITE_EXPIRED", "Invite link has expired.", 410);
+      const user = await this.createUserRecord(invite.email, input.password, input.name ?? invite.email, invite.role);
+      invite.acceptedAt = new Date().toISOString();
+      state.users.push(user);
+      return user;
+    });
   }
 
   /**
@@ -253,36 +253,45 @@ export class AuthService {
     email: string,
     password: string
   ): Promise<{ pendingTwoFactorToken: string; setupRequired: boolean }> {
-    const state = await this.stateStore.read();
-    const user = state.users.find((item) => item.email.toLowerCase() === email.toLowerCase());
-    if (!user) throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
-    if (user.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
+    // The slow part (bcrypt.compare) runs against a plain, lock-free read — holding the
+    // cross-process write lock for the ~100ms+ a password compare takes would serialize every
+    // concurrent login attempt behind it for no reason. recordFailedLogin below takes its own
+    // separate lock, so it must run out here too, not nested inside the update() below (the lock
+    // isn't reentrant — nesting would deadlock until the wait times out).
+    const peek = await this.stateStore.read();
+    const candidate = peek.users.find((item) => item.email.toLowerCase() === email.toLowerCase());
+    if (!candidate) throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
+    if (candidate.lockedUntil && new Date(candidate.lockedUntil).getTime() > Date.now()) {
       throw new IgleError("LOGIN_LOCKED", "Too many failed attempts. Try again later.", 429);
     }
-    const ok = await bcrypt.compare(password, user.passwordHash);
+    const ok = await bcrypt.compare(password, candidate.passwordHash);
     if (!ok) {
-      await this.recordFailedLogin(user.id);
+      await this.recordFailedLogin(candidate.id);
       throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
     }
 
-    user.failedLoginCount = 0;
-    user.failedLoginWindowStartedAt = undefined;
-    state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => new Date(item.expiresAt).getTime() > Date.now());
+    return this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === candidate.id);
+      if (!user) throw new IgleError("INVALID_LOGIN", "Email or password is incorrect.", 401);
 
-    const setupRequired = !user.twoFactorEnabled;
-    if (!user.twoFactorSecret) {
-      user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
-    }
+      user.failedLoginCount = 0;
+      user.failedLoginWindowStartedAt = undefined;
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => new Date(item.expiresAt).getTime() > Date.now());
 
-    const token = id("2fa");
-    state.pendingTwoFactor.push({
-      id: token,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + (setupRequired ? SETUP_TWO_FACTOR_TTL_MS : PENDING_TWO_FACTOR_TTL_MS)).toISOString(),
-      attempts: 0
+      const setupRequired = !user.twoFactorEnabled;
+      if (!user.twoFactorSecret) {
+        user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
+      }
+
+      const token = id("2fa");
+      state.pendingTwoFactor.push({
+        id: token,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + (setupRequired ? SETUP_TWO_FACTOR_TTL_MS : PENDING_TWO_FACTOR_TTL_MS)).toISOString(),
+        attempts: 0
+      });
+      return { pendingTwoFactorToken: token, setupRequired };
     });
-    await this.stateStore.write(state);
-    return { pendingTwoFactorToken: token, setupRequired };
   }
 
   /** Read-only lookup for the login-verify/setup page: which account a pending token belongs to, and whether it still needs the QR-code setup step or just a code from an already-configured app. Safe to call with no Actor — the pending token itself is what proves the password already checked out. */
@@ -308,52 +317,54 @@ export class AuthService {
    * limit rather than the account-wide login lockout, since the password already checked out.
    */
   async verifyTwoFactorAndCreateSession(pendingToken: string, code: string): Promise<{ sessionId: string; backupCodes?: string[] }> {
-    const state = await this.stateStore.read();
-    const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
-    if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
-    }
-    const user = state.users.find((item) => item.id === pending.userId);
-    if (!user || !user.twoFactorSecret) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
-    }
-    if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429);
-    }
+    // Every branch below — including the failure ones — mutates and must persist something
+    // (cleaning up an expired/exhausted pending record, or counting an attempt), so the mutator
+    // returns a result for the caller to interpret afterward rather than throwing directly:
+    // throwing inside update()'s mutator would skip its write and silently drop that persistence.
+    const result = await this.stateStore.update(async (state) => {
+      const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
+      if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401) };
+      }
+      const user = state.users.find((item) => item.id === pending.userId);
+      if (!user || !user.twoFactorSecret) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401) };
+      }
+      if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429) };
+      }
 
-    if (!validateTotpCode(user.twoFactorSecret, code)) {
-      pending.attempts += 1;
-      await this.stateStore.write(state);
-      throw new IgleError("INVALID_CODE", "That code is incorrect.", 401);
-    }
+      if (!validateTotpCode(user.twoFactorSecret, code)) {
+        pending.attempts += 1;
+        return { ok: false as const, error: new IgleError("INVALID_CODE", "That code is incorrect.", 401) };
+      }
 
-    // Generating backup codes the moment 2FA first turns on (not before, and not on every
-    // ordinary login) ties them to this secret's "epoch" — a fresh set every time setup happens,
-    // including a redo after adminResetTwoFactor or a lost-device recovery, so old codes tied to
-    // a secret that's no longer in use can never be replayed.
-    const wasSetupRequired = !user.twoFactorEnabled;
-    let backupCodes: string[] | undefined;
-    if (wasSetupRequired) {
-      backupCodes = generateBackupCodes();
-      user.twoFactorBackupCodeHashes = await Promise.all(backupCodes.map((backupCode) => bcrypt.hash(backupCode, 10)));
-    }
+      // Generating backup codes the moment 2FA first turns on (not before, and not on every
+      // ordinary login) ties them to this secret's "epoch" — a fresh set every time setup happens,
+      // including a redo after adminResetTwoFactor or a lost-device recovery, so old codes tied to
+      // a secret that's no longer in use can never be replayed.
+      const wasSetupRequired = !user.twoFactorEnabled;
+      let backupCodes: string[] | undefined;
+      if (wasSetupRequired) {
+        backupCodes = generateBackupCodes();
+        user.twoFactorBackupCodeHashes = await Promise.all(backupCodes.map((backupCode) => bcrypt.hash(backupCode, 10)));
+      }
 
-    user.twoFactorEnabled = true;
-    state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-    const sessionId = id("sess");
-    state.sessions.push({
-      id: sessionId,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      user.twoFactorEnabled = true;
+      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+      const sessionId = id("sess");
+      state.sessions.push({
+        id: sessionId,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+      });
+      return { ok: true as const, sessionId, backupCodes };
     });
-    await this.stateStore.write(state);
-    return { sessionId, ...(backupCodes ? { backupCodes } : {}) };
+    if (!result.ok) throw result.error;
+    return { sessionId: result.sessionId, ...(result.backupCodes ? { backupCodes: result.backupCodes } : {}) };
   }
 
   /**
@@ -364,47 +375,47 @@ export class AuthService {
    * triggered by the account holder instead of another administrator.
    */
   async verifyBackupCodeAndRestartSetup(pendingToken: string, code: string): Promise<void> {
-    const state = await this.stateStore.read();
-    const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
-    if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
-    }
-    const user = state.users.find((item) => item.id === pending.userId);
-    if (!user) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401);
-    }
-    if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
-      state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
-      await this.stateStore.write(state);
-      throw new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429);
-    }
-
-    const hashes = user.twoFactorBackupCodeHashes ?? [];
-    const normalized = normalizeBackupCode(code);
-    let matchedIndex = -1;
-    for (let i = 0; i < hashes.length; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      if (await bcrypt.compare(normalized, hashes[i]!)) {
-        matchedIndex = i;
-        break;
+    // Same shape as verifyTwoFactorAndCreateSession above: every branch persists something, so
+    // failures are returned rather than thrown from inside the mutator.
+    const result = await this.stateStore.update(async (state) => {
+      const pending = state.pendingTwoFactor.find((item) => item.id === pendingToken);
+      if (!pending || new Date(pending.expiresAt).getTime() < Date.now()) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401) };
       }
-    }
-    if (matchedIndex === -1) {
-      pending.attempts += 1;
-      await this.stateStore.write(state);
-      throw new IgleError("INVALID_CODE", "That backup code is incorrect or has already been used.", 401);
-    }
+      const user = state.users.find((item) => item.id === pending.userId);
+      if (!user) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TWO_FACTOR_EXPIRED", "That sign-in attempt has expired — start over.", 401) };
+      }
+      if (pending.attempts >= MAX_TWO_FACTOR_ATTEMPTS) {
+        state.pendingTwoFactor = state.pendingTwoFactor.filter((item) => item.id !== pendingToken);
+        return { ok: false as const, error: new IgleError("TOO_MANY_ATTEMPTS", "Too many incorrect codes — start over.", 429) };
+      }
 
-    user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
-    user.twoFactorEnabled = false;
-    user.twoFactorBackupCodeHashes = hashes.filter((_, index) => index !== matchedIndex);
-    pending.attempts = 0;
-    pending.expiresAt = new Date(Date.now() + SETUP_TWO_FACTOR_TTL_MS).toISOString();
-    await this.stateStore.write(state);
+      const hashes = user.twoFactorBackupCodeHashes ?? [];
+      const normalized = normalizeBackupCode(code);
+      let matchedIndex = -1;
+      for (let i = 0; i < hashes.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await bcrypt.compare(normalized, hashes[i]!)) {
+          matchedIndex = i;
+          break;
+        }
+      }
+      if (matchedIndex === -1) {
+        pending.attempts += 1;
+        return { ok: false as const, error: new IgleError("INVALID_CODE", "That backup code is incorrect or has already been used.", 401) };
+      }
+
+      user.twoFactorSecret = new OTPAuth.Secret({ size: 20 }).base32;
+      user.twoFactorEnabled = false;
+      user.twoFactorBackupCodeHashes = hashes.filter((_, index) => index !== matchedIndex);
+      pending.attempts = 0;
+      pending.expiresAt = new Date(Date.now() + SETUP_TWO_FACTOR_TTL_MS).toISOString();
+      return { ok: true as const };
+    });
+    if (!result.ok) throw result.error;
   }
 
   /** Starts (or restarts) 2FA setup for the actor's own account. The secret is stored right away but 2FA doesn't actually turn on until confirmTotpEnrollment verifies a real code from it — otherwise a typo while scanning the QR code could lock the account out. */

@@ -108,16 +108,72 @@ export class JsonStateStore {
     }
   }
 
+  /**
+   * Writes via a temp file + rename rather than truncating the target in place. `rename()` is
+   * atomic at the filesystem level, so a concurrent `read()` from another process always sees
+   * either the complete old file or the complete new one — never a half-written mix. A direct
+   * `fs.writeFile` on the real path had no such guarantee: two processes (the web and worker
+   * containers both write this same file over a shared volume, with no coordination between them)
+   * writing at once could have their bytes physically interleave, corrupting the file — confirmed
+   * live in production, where it took the entire app down (every request reads this file).
+   */
   async write(state: CoreState): Promise<void> {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    await fs.writeFile(this.filePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    const tempPath = `${this.filePath}.tmp-${process.pid}-${randomUUID()}`;
+    await fs.writeFile(tempPath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    await fs.rename(tempPath, this.filePath);
   }
 
+  /**
+   * The atomic rename in `write()` stops corruption, but not a second, separate failure mode:
+   * two processes each reading the same snapshot, mutating their own copy, and writing back —
+   * whichever writes second silently discards the first's changes, no corruption, just quietly
+   * lost data. A cross-process lock around the whole read-mutate-write cycle serializes that,
+   * the same way in-process code elsewhere in this app already serializes concurrent edits to one
+   * site's files (see site-lock.ts's own docstring, which names this exact gap as the thing that
+   * would need solving if this ever ran as more than one process — which, via the worker
+   * container, it already does).
+   */
   async update<T>(mutate: (state: CoreState) => T | Promise<T>): Promise<T> {
-    const state = await this.read();
-    const result = await mutate(state);
-    await this.write(state);
-    return result;
+    const release = await acquireStateLock(this.filePath);
+    try {
+      const state = await this.read();
+      const result = await mutate(state);
+      await this.write(state);
+      return result;
+    } finally {
+      await release();
+    }
+  }
+}
+
+const LOCK_STALE_MS = 30_000;
+const LOCK_POLL_MS = 50;
+const LOCK_MAX_WAIT_MS = 20_000;
+
+/** A lock a process died holding must not wedge every future write forever — anything older than this is assumed abandoned and stolen. */
+async function acquireStateLock(filePath: string): Promise<() => Promise<void>> {
+  const lockPath = `${filePath}.lock`;
+  const start = Date.now();
+  for (;;) {
+    try {
+      // "wx" is O_CREAT|O_EXCL under the hood — atomically fails if the file already exists, so
+      // this is a real mutex even across separate OS processes sharing this filesystem.
+      const handle = await fs.open(lockPath, "wx");
+      await handle.close();
+      return () => fs.unlink(lockPath).catch(() => undefined);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const staleSince = await fs.stat(lockPath).catch(() => undefined);
+      if (staleSince && Date.now() - staleSince.mtimeMs > LOCK_STALE_MS) {
+        await fs.unlink(lockPath).catch(() => undefined);
+        continue;
+      }
+      if (Date.now() - start > LOCK_MAX_WAIT_MS) {
+        throw new Error(`Timed out after ${LOCK_MAX_WAIT_MS}ms waiting for the state.json lock — another process may be stuck holding it.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+    }
   }
 }
 

@@ -44,38 +44,42 @@ export class RevisionService {
       if (existing) return existing;
     }
 
-    const state = await this.stateStore.read();
-    const nextNumber = state.revisions.filter((revision) => revision.siteId === input.site.id).length + 1;
-    const message = `Revision #${nextNumber}: ${input.source}: ${input.title}`;
-    const env = {
-      ...process.env,
-      GIT_AUTHOR_NAME: input.user?.name ?? "Igle System",
-      GIT_AUTHOR_EMAIL: input.user?.email ?? "system@igle.local",
-      GIT_COMMITTER_NAME: "Igle CMS",
-      GIT_COMMITTER_EMAIL: "system@igle.local"
-    };
-    await git(input.site.repoPath, ["commit", "-m", message], env);
-    const commitSha = (await git(input.site.repoPath, ["rev-parse", "HEAD"])).trim();
-    const parent = state.revisions.filter((revision) => revision.siteId === input.site.id).at(-1);
-    const record: SiteRevisionRecord = {
-      id: id("rev"),
-      siteId: input.site.id,
-      revisionNumber: nextNumber,
-      parentRevisionId: parent?.id,
-      commitSha,
-      createdByUserId: input.user?.id,
-      source: input.source,
-      title: input.title,
-      description: input.description,
-      filesChanged: changed,
-      createdAt: new Date().toISOString()
-    };
+    // The revision-number assignment, git commit, and state.json write all happen inside one
+    // locked update() — two sites' saves can still proceed fully in parallel (different repos),
+    // but this closes the same cross-process race that corrupted state.json in production: two
+    // processes computing `nextNumber` from the same stale read and then both writing.
+    return this.stateStore.update(async (state) => {
+      const nextNumber = state.revisions.filter((revision) => revision.siteId === input.site.id).length + 1;
+      const message = `Revision #${nextNumber}: ${input.source}: ${input.title}`;
+      const env = {
+        ...process.env,
+        GIT_AUTHOR_NAME: input.user?.name ?? "Igle System",
+        GIT_AUTHOR_EMAIL: input.user?.email ?? "system@igle.local",
+        GIT_COMMITTER_NAME: "Igle CMS",
+        GIT_COMMITTER_EMAIL: "system@igle.local"
+      };
+      await git(input.site.repoPath, ["commit", "-m", message], env);
+      const commitSha = (await git(input.site.repoPath, ["rev-parse", "HEAD"])).trim();
+      const parent = state.revisions.filter((revision) => revision.siteId === input.site.id).at(-1);
+      const record: SiteRevisionRecord = {
+        id: id("rev"),
+        siteId: input.site.id,
+        revisionNumber: nextNumber,
+        parentRevisionId: parent?.id,
+        commitSha,
+        createdByUserId: input.user?.id,
+        source: input.source,
+        title: input.title,
+        description: input.description,
+        filesChanged: changed,
+        createdAt: new Date().toISOString()
+      };
 
-    state.revisions.push(record);
-    const site = state.sites.find((item) => item.id === input.site.id);
-    if (site) site.headRevisionId = record.id;
-    await this.stateStore.write(state);
-    return record;
+      state.revisions.push(record);
+      const site = state.sites.find((item) => item.id === input.site.id);
+      if (site) site.headRevisionId = record.id;
+      return record;
+    });
   }
 
   async latest(siteId: string): Promise<SiteRevisionRecord | undefined> {
