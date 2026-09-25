@@ -110,8 +110,11 @@ export class TaskService {
       };
       pushActivity(task, { action: "created", actorId: actor.id, actorLabel: label });
       state.tasks.push(task);
-      if (input.assigneeId && input.assigneeId !== actor.id) {
-        const message = `${label} assigned you "${task.title}"`;
+      if (input.assigneeId) {
+        // Notified even on self-assignment (unlike status-change/comment recipients below, which
+        // still exclude the actor) — an explicit ask: assigning yourself something is still worth
+        // a "this exists now" ping, since creating a task doesn't otherwise resurface it later.
+        const message = input.assigneeId === actor.id ? `You assigned yourself "${task.title}"` : `${label} assigned you "${task.title}"`;
         state.notifications.push(buildNotification({ userId: input.assigneeId, kind: "task-assigned", taskId: task.id, message }));
         pings.push({ userId: input.assigneeId, taskId: task.id, message });
       }
@@ -184,8 +187,8 @@ export class TaskService {
             to: userLabel(state.users, nextAssigneeId)
           });
           task.assigneeId = nextAssigneeId;
-          if (nextAssigneeId && nextAssigneeId !== actor.id) {
-            const message = `${label} assigned you "${task.title}"`;
+          if (nextAssigneeId) {
+            const message = nextAssigneeId === actor.id ? `You assigned yourself "${task.title}"` : `${label} assigned you "${task.title}"`;
             state.notifications.push(buildNotification({ userId: nextAssigneeId, kind: "task-assigned", taskId: task.id, message }));
             pings.push({ userId: nextAssigneeId, taskId: task.id, message });
           }
