@@ -131,3 +131,20 @@ export function SettingsIcon({ size = 18 }: IconProps) {
     </svg>
   );
 }
+
+export function SunIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...base} width={size} height={size} aria-hidden="true">
+      <circle cx="9" cy="9" r="3.4" />
+      <path d="M9 1.8v2M9 14.2v2M16.2 9h-2M3.8 9h-2M13.9 4.1l-1.4 1.4M5.5 12.5l-1.4 1.4M13.9 13.9l-1.4-1.4M5.5 5.5 4.1 4.1" />
+    </svg>
+  );
+}
+
+export function MoonIcon({ size = 14 }: IconProps) {
+  return (
+    <svg {...base} width={size} height={size} aria-hidden="true">
+      <path d="M14.8 10.9A6.2 6.2 0 0 1 7.1 3.2a6.2 6.2 0 1 0 7.7 7.7z" />
+    </svg>
+  );
+}

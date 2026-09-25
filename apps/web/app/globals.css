@@ -1,4 +1,29 @@
+/* Dark is the default look (no toggle needed) — :root[data-theme="light"] below opts out.
+   ThemeToggle.tsx sets that attribute and remembers the choice in localStorage; the inline
+   script in layout.tsx applies it before first paint so there's no flash of the other theme. */
 :root {
+  color-scheme: dark;
+  --bg: #14171c;
+  --panel: #1b1f26;
+  --line: #2b303a;
+  --line-strong: #3a4049;
+  --text: #edf0f3;
+  --muted: #99a2af;
+  --accent: #2fa89a;
+  --accent-hover: #45bcad;
+  --accent-soft: #17322e;
+  --danger: #e0685d;
+  --danger-soft: #3a2320;
+  --warn: #dba13d;
+  --warn-soft: #3a2f18;
+  --success: #4fbf8c;
+  --success-soft: #1a3327;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.4);
+  --radius: 8px;
+}
+
+:root[data-theme="light"] {
   color-scheme: light;
   --bg: #f7f8fb;
   --panel: #ffffff;
@@ -17,30 +42,6 @@
   --success-soft: #e5f3ec;
   --shadow-sm: 0 1px 2px rgba(20, 24, 30, 0.05);
   --shadow-md: 0 6px 20px rgba(20, 24, 30, 0.08);
-  --radius: 8px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #14171c;
-    --panel: #1b1f26;
-    --line: #2b303a;
-    --line-strong: #3a4049;
-    --text: #edf0f3;
-    --muted: #99a2af;
-    --accent: #2fa89a;
-    --accent-hover: #45bcad;
-    --accent-soft: #17322e;
-    --danger: #e0685d;
-    --danger-soft: #3a2320;
-    --warn: #dba13d;
-    --warn-soft: #3a2f18;
-    --success: #4fbf8c;
-    --success-soft: #1a3327;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.4);
-  }
 }
 
 * {
@@ -175,7 +176,8 @@ h3 {
   .brand span:last-child,
   .nav a span,
   .sidebar-account p,
-  .sidebar-account a {
+  .sidebar-account a,
+  .sidebar-account button span {
     display: none;
   }
 
@@ -189,7 +191,8 @@ h3 {
     padding: 10px;
   }
 
-  .sidebar-account form {
+  .sidebar-account form,
+  .sidebar-account button {
     display: flex;
     justify-content: center;
   }
