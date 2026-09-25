@@ -52,4 +52,21 @@ export class NotificationService {
       }
     });
   }
+
+  /** Called when the actor views the task a notification points at — e.g. following a Telegram link straight to `/tasks/:id` skips the notifications page entirely, so without this the unread badge would never clear for that path. A cheap read first avoids taking the write lock on every task view when there's nothing to mark. */
+  async markReadForTask(actor: Actor, taskId: string): Promise<void> {
+    const state = await this.stateStore.read();
+    const hasUnread = state.notifications.some(
+      (notification) => notification.userId === actor.id && notification.taskId === taskId && !notification.readAt
+    );
+    if (!hasUnread) return;
+    await this.stateStore.update((state) => {
+      const now = new Date().toISOString();
+      for (const notification of state.notifications) {
+        if (notification.userId === actor.id && notification.taskId === taskId && !notification.readAt) {
+          notification.readAt = now;
+        }
+      }
+    });
+  }
 }

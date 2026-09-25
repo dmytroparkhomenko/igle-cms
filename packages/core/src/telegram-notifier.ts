@@ -32,7 +32,7 @@ export class TelegramNotifier {
       for (const ping of pings) {
         const user = state.users.find((item) => item.id === ping.userId);
         if (!user?.telegramChatId) continue;
-        const result = await provider.sendMessage(user.telegramChatId, `${ping.message}\n${this.webOrigin}/tasks/${ping.taskId}`);
+        const result = await provider.sendMessage(user.telegramChatId, ping.message, `${this.webOrigin}/tasks/${ping.taskId}`);
         if (!result.ok) {
           console.warn(`Telegram send failed for user ${ping.userId}: ${result.error}`);
         }

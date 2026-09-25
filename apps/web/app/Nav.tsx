@@ -20,7 +20,7 @@ const links = [
 
 const adminOnly = new Set(["/team", "/servers", "/domains", "/cloudflare-accounts", "/integrations"]);
 
-export function Nav({ showTeam, unreadCount = 0 }: { showTeam: boolean; unreadCount?: number }) {
+export function Nav({ showTeam }: { showTeam: boolean }) {
   const pathname = usePathname();
   const visibleLinks = showTeam ? links : links.filter((link) => !adminOnly.has(link.href));
 
@@ -31,11 +31,6 @@ export function Nav({ showTeam, unreadCount = 0 }: { showTeam: boolean; unreadCo
         return (
           <Link key={link.href} href={link.href} className={active ? "active" : undefined}>
             {link.label}
-            {link.href === "/tasks" && unreadCount > 0 ? (
-              <span className="status" style={{ marginLeft: 6, fontSize: 10.5, background: "var(--warn)", color: "#fff", borderColor: "var(--warn)" }}>
-                {unreadCount}
-              </span>
-            ) : null}
           </Link>
         );
       })}

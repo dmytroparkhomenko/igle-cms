@@ -29,13 +29,23 @@ interface TelegramEnvelope<T> {
  * a user obtains their own chat ID by some external means (e.g. messaging @userinfobot) and pastes
  * it into Igle CMS themselves.
  */
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 export class TelegramProvider {
   constructor(private readonly config: TelegramConfig) {}
 
-  /** Never throws — this is used fire-and-forget from a task-notification path that must never fail the underlying task action. */
-  async sendMessage(chatId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  /**
+   * Never throws — this is used fire-and-forget from a task-notification path that must never fail
+   * the underlying task action. Sent as HTML with an explicit `<a>` tag rather than relying on
+   * Telegram's plain-text URL auto-detection, which does not reliably linkify hosts without a
+   * public-looking TLD (e.g. a misconfigured `http://localhost:3000` origin renders as dead text).
+   */
+  async sendMessage(chatId: string, text: string, linkUrl?: string): Promise<{ ok: boolean; error?: string }> {
     try {
-      await this.call("sendMessage", { chat_id: chatId, text, disable_web_page_preview: true });
+      const body = linkUrl ? `${escapeHtml(text)}\n<a href="${escapeHtml(linkUrl)}">Open task</a>` : escapeHtml(text);
+      await this.call("sendMessage", { chat_id: chatId, text: body, parse_mode: "HTML", disable_web_page_preview: true });
       return { ok: true };
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Telegram send failed." };

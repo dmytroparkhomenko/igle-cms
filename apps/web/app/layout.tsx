@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <div className="shell">
           <aside className="sidebar">
             <div className="brand">Igle CMS</div>
-            <Nav showTeam={actor?.role === "administrator"} unreadCount={unreadCount} />
+            <Nav showTeam={actor?.role === "administrator"} />
             {actor ? (
               <div className="sidebar-account">
                 <p className="muted" style={{ margin: 0, fontSize: 12, wordBreak: "break-all" }}>

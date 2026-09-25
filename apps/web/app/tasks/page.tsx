@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
+import { NewTaskButton } from "./NewTaskButton";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +24,10 @@ const statuses = ["open", "in-progress", "done", "cancelled"] as const;
 export default async function TasksPage({
   searchParams
 }: {
-  searchParams: Promise<{ error?: string; assignee?: string; view?: string; archived?: string }>;
+  searchParams: Promise<{ error?: string; assignee?: string; view?: string; archived?: string; deleted?: string }>;
 }) {
   const actor = await requireActorOrRedirect();
-  const { error, assignee, view, archived } = await searchParams;
+  const { error, assignee, view, archived, deleted } = await searchParams;
   const isAdmin = actor.role === "administrator";
   const [tasks, sites, members] = await Promise.all([
     runtime.taskService.list(),
@@ -67,10 +68,10 @@ export default async function TasksPage({
           <p className="muted">{openTasks.length} open.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Link href={listHref} className="button" style={!boardView ? { color: "var(--accent)" } : { background: "none", color: "var(--muted)" }}>
+          <Link href={listHref} className="button" style={boardView ? { background: "none", color: "var(--muted)" } : undefined}>
             List
           </Link>
-          <Link href={boardHref} className="button" style={boardView ? { color: "var(--accent)" } : { background: "none", color: "var(--muted)" }}>
+          <Link href={boardHref} className="button" style={boardView ? undefined : { background: "none", color: "var(--muted)" }}>
             Board
           </Link>
           {isAdmin ? (
@@ -83,6 +84,7 @@ export default async function TasksPage({
               Archive
             </Link>
           ) : null}
+          <NewTaskButton members={members} sites={sites} actorId={actor.id} />
         </div>
       </div>
 
@@ -94,6 +96,11 @@ export default async function TasksPage({
       {archived ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
           Task archived.
+        </article>
+      ) : null}
+      {deleted ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
+          Task deleted.
         </article>
       ) : null}
 
@@ -114,72 +121,6 @@ export default async function TasksPage({
           );
         })}
       </div>
-
-      <form
-        className="card"
-        method="post"
-        action="/api/tasks"
-        style={{ display: "grid", gap: 10, marginBottom: 28, maxWidth: 480 }}
-      >
-        <h2>New task</h2>
-        <label className="muted" htmlFor="title">
-          Title
-        </label>
-        <input type="text" id="title" name="title" required />
-
-        <label className="muted" htmlFor="description">
-          Description
-        </label>
-        <textarea id="description" name="description" rows={4} style={{ font: "inherit", padding: 8, borderRadius: 6, border: "1px solid var(--line)" }} />
-
-        <label className="muted" htmlFor="assigneeId">
-          Assign to
-        </label>
-        <select id="assigneeId" name="assigneeId" defaultValue={actor.id}>
-          <option value="">Unassigned</option>
-          {members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name || member.email}
-            </option>
-          ))}
-        </select>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <label className="muted" htmlFor="priority">
-              Priority
-            </label>
-            <select id="priority" name="priority" defaultValue="medium">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-              <option value="urgent">Urgent</option>
-            </select>
-          </div>
-          <div>
-            <label className="muted" htmlFor="deadline">
-              Deadline (optional)
-            </label>
-            <input type="date" id="deadline" name="deadline" />
-          </div>
-        </div>
-
-        <label className="muted" htmlFor="siteId">
-          Site (optional)
-        </label>
-        <select id="siteId" name="siteId">
-          <option value="">No specific site</option>
-          {sites.map((site) => (
-            <option key={site.id} value={site.id}>
-              {site.metadata.name}
-            </option>
-          ))}
-        </select>
-
-        <button className="button" type="submit" style={{ justifySelf: "start", marginTop: 6 }}>
-          Create task
-        </button>
-      </form>
 
       {boardView ? (
         <div className="board" style={{ marginBottom: 28 }}>

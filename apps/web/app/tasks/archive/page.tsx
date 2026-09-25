@@ -2,12 +2,13 @@ import Link from "next/link";
 import { IgleError } from "@igle/shared";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
+import { DeleteTaskButton } from "../DeleteTaskButton";
 
 export const dynamic = "force-dynamic";
 
-export default async function TaskArchivePage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+export default async function TaskArchivePage({ searchParams }: { searchParams: Promise<{ error?: string; deleted?: string }> }) {
   const actor = await requireActorOrRedirect();
-  const { error } = await searchParams;
+  const { error, deleted } = await searchParams;
 
   let tasks: Awaited<ReturnType<typeof runtime.taskService.listArchived>> = [];
   let forbidden = false;
@@ -46,6 +47,11 @@ export default async function TaskArchivePage({ searchParams }: { searchParams: 
         </Link>
       </div>
 
+      {deleted ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
+          Task deleted.
+        </article>
+      ) : null}
       {error ? (
         <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
           {error}
@@ -63,11 +69,14 @@ export default async function TaskArchivePage({ searchParams }: { searchParams: 
                 </h3>
                 <p className="muted">{assignee ? assignee.name || assignee.email : "Unassigned"}</p>
               </div>
-              <form method="post" action={`/api/tasks/${task.id}/unarchive`}>
-                <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>
-                  Restore
-                </button>
-              </form>
+              <div style={{ display: "flex", gap: 8 }}>
+                <form method="post" action={`/api/tasks/${task.id}/unarchive`}>
+                  <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>
+                    Restore
+                  </button>
+                </form>
+                <DeleteTaskButton taskId={task.id} title={task.title} redirectTo="/tasks/archive?deleted=1" />
+              </div>
             </div>
           );
         })}

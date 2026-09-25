@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
+import { DeleteTaskButton } from "../DeleteTaskButton";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,8 @@ export default async function TaskDetailPage({
 
   const [site, members] = await Promise.all([
     task.siteId ? runtime.siteService.get(task.siteId, actor) : Promise.resolve(undefined),
-    runtime.authService.listSelectable(actor)
+    runtime.authService.listSelectable(actor),
+    runtime.notificationService.markReadForTask(actor, taskId)
   ]);
   const membersById = new Map(members.map((member) => [member.id, member]));
   const assignee = task.assigneeId ? membersById.get(task.assigneeId) : undefined;
@@ -87,6 +89,7 @@ export default async function TaskDetailPage({
               </button>
             </form>
           ) : null}
+          {isAdmin ? <DeleteTaskButton taskId={task.id} title={task.title} /> : null}
           <Link href="/tasks" className="button" style={{ background: "none", color: "var(--accent)" }}>
             Back to tasks
           </Link>

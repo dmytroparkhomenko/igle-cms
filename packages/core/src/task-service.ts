@@ -262,6 +262,18 @@ export class TaskService {
     });
   }
 
+  /** Permanent, unlike archive — admin-only. Also drops any notifications pointing at this task (their link would otherwise 404) and its attachment files on disk. */
+  async delete(taskId: string, actor: Actor): Promise<void> {
+    assertCan(actor, "tasks.manage");
+    await this.stateStore.update((state) => {
+      const index = state.tasks.findIndex((item) => item.id === taskId);
+      if (index === -1) throw new IgleError("TASK_NOT_FOUND", "Task was not found.", 404);
+      state.tasks.splice(index, 1);
+      state.notifications = state.notifications.filter((notification) => notification.taskId !== taskId);
+    });
+    await fs.rm(path.join(this.dataDir, "task-attachments", taskId), { recursive: true, force: true }).catch(() => undefined);
+  }
+
   /**
    * Archives every non-archived done/cancelled task right now — no day-of-week gating. Used by
    * both the admin's manual "Archive now" button and (indirectly) the weekly scheduled sweep
