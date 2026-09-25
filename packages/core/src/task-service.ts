@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { assertCan, IgleError, type Actor, type TaskCategory } from "@igle/shared";
+import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { buildNotification } from "./notification-service.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type {
@@ -20,7 +20,6 @@ export interface CreateTaskInput {
   siteId?: string | undefined;
   title: string;
   description: string;
-  category: TaskCategory;
   priority: TaskPriority;
   deadline?: string | undefined;
   assigneeId?: string | undefined;
@@ -29,7 +28,6 @@ export interface CreateTaskInput {
 export interface UpdateTaskInput {
   status?: TaskStatus | undefined;
   priority?: TaskPriority | undefined;
-  category?: TaskCategory | undefined;
   deadline?: string | null | undefined;
   assigneeId?: string | null | undefined;
 }
@@ -63,17 +61,30 @@ function pushActivity(task: TaskRecord, entry: { action: TaskActivityAction; act
   task.activity.push({ id: id("activity"), createdAt: new Date().toISOString(), ...entry });
 }
 
+export interface TaskPing {
+  userId: string;
+  taskId: string;
+  message: string;
+}
+
+/** A side channel for task notifications beyond the in-app record (Telegram today) — structural, not a hard dependency: TaskService never imports the concrete implementation. */
+export interface TaskPingDelivery {
+  deliver(pings: TaskPing[]): Promise<void>;
+}
+
 export class TaskService {
   constructor(
     private readonly dataDir: string,
-    private readonly stateStore: JsonStateStore
+    private readonly stateStore: JsonStateStore,
+    private readonly pingDelivery?: TaskPingDelivery
   ) {}
 
   /** Open to any signed-in user — task creation isn't ownership-gated, matching how the rest of this app treats team-wide work as shared/visible. */
   async create(input: CreateTaskInput, actor: Actor): Promise<TaskRecord> {
     const title = input.title.trim();
     if (!title) throw new IgleError("INVALID_TASK", "Title is required.", 400);
-    return this.stateStore.update((state) => {
+    const pings: TaskPing[] = [];
+    const task = await this.stateStore.update((state) => {
       if (input.assigneeId && !state.users.some((user) => user.id === input.assigneeId)) {
         throw new IgleError("ASSIGNEE_NOT_FOUND", "That team member was not found.", 400);
       }
@@ -84,7 +95,6 @@ export class TaskService {
         siteId: input.siteId,
         title,
         description: input.description.trim(),
-        category: input.category,
         priority: input.priority,
         status: "open",
         deadline: input.deadline,
@@ -101,17 +111,14 @@ export class TaskService {
       pushActivity(task, { action: "created", actorId: actor.id, actorLabel: label });
       state.tasks.push(task);
       if (input.assigneeId && input.assigneeId !== actor.id) {
-        state.notifications.push(
-          buildNotification({
-            userId: input.assigneeId,
-            kind: "task-assigned",
-            taskId: task.id,
-            message: `${label} assigned you "${task.title}"`
-          })
-        );
+        const message = `${label} assigned you "${task.title}"`;
+        state.notifications.push(buildNotification({ userId: input.assigneeId, kind: "task-assigned", taskId: task.id, message }));
+        pings.push({ userId: input.assigneeId, taskId: task.id, message });
       }
       return task;
     });
+    void this.pingDelivery?.deliver(pings).catch(() => undefined);
+    return task;
   }
 
   /** Team-wide transparency — every signed-in user sees every task, same as the old Tickets list. */
@@ -132,7 +139,8 @@ export class TaskService {
   }
 
   async update(taskId: string, input: UpdateTaskInput, actor: Actor): Promise<TaskRecord> {
-    return this.stateStore.update((state) => {
+    const pings: TaskPing[] = [];
+    const task = await this.stateStore.update((state) => {
       const task = state.tasks.find((item) => item.id === taskId);
       if (!task) throw new IgleError("TASK_NOT_FOUND", "Task was not found.", 404);
       assertTaskOwner(task, actor, "edit this task");
@@ -146,23 +154,14 @@ export class TaskService {
           [task.assigneeId, task.creatorId].filter((userId): userId is string => Boolean(userId) && userId !== actor.id)
         );
         for (const recipientId of recipients) {
-          state.notifications.push(
-            buildNotification({
-              userId: recipientId,
-              kind: "task-status-changed" as NotificationKind,
-              taskId: task.id,
-              message: `${label} changed "${task.title}" to ${input.status}`
-            })
-          );
+          const message = `${label} changed "${task.title}" to ${input.status}`;
+          state.notifications.push(buildNotification({ userId: recipientId, kind: "task-status-changed" as NotificationKind, taskId: task.id, message }));
+          pings.push({ userId: recipientId, taskId: task.id, message });
         }
       }
       if (input.priority && input.priority !== task.priority) {
         pushActivity(task, { action: "priority-changed", actorId: actor.id, actorLabel: label, from: task.priority, to: input.priority });
         task.priority = input.priority;
-      }
-      if (input.category && input.category !== task.category) {
-        pushActivity(task, { action: "category-changed", actorId: actor.id, actorLabel: label, from: task.category, to: input.category });
-        task.category = input.category;
       }
       if (input.deadline !== undefined) {
         const nextDeadline = input.deadline ?? undefined;
@@ -186,14 +185,9 @@ export class TaskService {
           });
           task.assigneeId = nextAssigneeId;
           if (nextAssigneeId && nextAssigneeId !== actor.id) {
-            state.notifications.push(
-              buildNotification({
-                userId: nextAssigneeId,
-                kind: "task-assigned",
-                taskId: task.id,
-                message: `${label} assigned you "${task.title}"`
-              })
-            );
+            const message = `${label} assigned you "${task.title}"`;
+            state.notifications.push(buildNotification({ userId: nextAssigneeId, kind: "task-assigned", taskId: task.id, message }));
+            pings.push({ userId: nextAssigneeId, taskId: task.id, message });
           }
         }
       }
@@ -201,13 +195,16 @@ export class TaskService {
       task.updatedAt = new Date().toISOString();
       return task;
     });
+    void this.pingDelivery?.deliver(pings).catch(() => undefined);
+    return task;
   }
 
   /** Comments stay open to everyone signed in — collaboration, not editing the task's own fields. */
   async addComment(taskId: string, actor: Actor, body: string): Promise<TaskRecord> {
     const trimmed = body.trim();
     if (!trimmed) throw new IgleError("INVALID_COMMENT", "Comment cannot be empty.", 400);
-    return this.stateStore.update((state) => {
+    const pings: TaskPing[] = [];
+    const task = await this.stateStore.update((state) => {
       const task = state.tasks.find((item) => item.id === taskId);
       if (!task) throw new IgleError("TASK_NOT_FOUND", "Task was not found.", 404);
       const label = userLabel(state.users, actor.id, actor.email);
@@ -224,17 +221,14 @@ export class TaskService {
         [task.assigneeId, task.creatorId].filter((userId): userId is string => Boolean(userId) && userId !== actor.id)
       );
       for (const recipientId of recipients) {
-        state.notifications.push(
-          buildNotification({
-            userId: recipientId,
-            kind: "task-comment",
-            taskId: task.id,
-            message: `${label} commented on "${task.title}"`
-          })
-        );
+        const message = `${label} commented on "${task.title}"`;
+        state.notifications.push(buildNotification({ userId: recipientId, kind: "task-comment", taskId: task.id, message }));
+        pings.push({ userId: recipientId, taskId: task.id, message });
       }
       return task;
     });
+    void this.pingDelivery?.deliver(pings).catch(() => undefined);
+    return task;
   }
 
   async archive(taskId: string, actor: Actor): Promise<TaskRecord> {

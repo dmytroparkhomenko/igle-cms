@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { IgleError, taskCategoryLabels } from "@igle/shared";
+import { IgleError } from "@igle/shared";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
 
@@ -61,11 +61,7 @@ export default async function TaskArchivePage({ searchParams }: { searchParams: 
                 <h3>
                   <Link href={`/tasks/${task.id}`}>{task.title}</Link>
                 </h3>
-                <p className="muted">
-                  {taskCategoryLabels[task.category]}
-                  {" · "}
-                  {assignee ? assignee.name || assignee.email : "Unassigned"}
-                </p>
+                <p className="muted">{assignee ? assignee.name || assignee.email : "Unassigned"}</p>
               </div>
               <form method="post" action={`/api/tasks/${task.id}/unarchive`}>
                 <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }}>

@@ -1,4 +1,4 @@
-import type { FieldState, SiteMetadata, TaskCategory } from "@igle/shared";
+import type { FieldState, SiteMetadata } from "@igle/shared";
 
 export type RevisionSource =
   | "import"
@@ -109,6 +109,8 @@ export interface CoreState {
   affiliateLinks?: Record<string, string> | undefined;
   /** ISO timestamp of the last weekly task-archive sweep (see TaskService.runWeeklyArchiveSweepIfDue) — lets the worker tell it's already run today without a second store. */
   taskArchiveSweepAt?: string | undefined;
+  /** One shared bot token for task-assignment Telegram notifications — see TelegramSettingsService/TelegramNotifier. Admin-set on /integrations. */
+  telegramBotToken?: string | undefined;
 }
 
 export interface UserRecord {
@@ -117,8 +119,6 @@ export interface UserRecord {
   name: string;
   role: "administrator" | "editor";
   passwordHash: string;
-  /** Descriptive only, not a permission — which task categories this person covers, so a task's assignee picker can surface likely-relevant people first. Admin-managed from /team. */
-  tags: TaskCategory[];
   twoFactorSecret?: string | undefined;
   twoFactorEnabled: boolean;
   /** bcrypt hashes of unused one-time backup codes — self-service recovery when the authenticator device is lost. Never store the plaintext codes; each is shown to the user exactly once, right after it's generated. */
@@ -128,6 +128,8 @@ export interface UserRecord {
   failedLoginWindowStartedAt?: string | undefined;
   failedLoginCount: number;
   createdAt: string;
+  /** Self-service — the user's own numeric Telegram chat ID, obtained by some external means (e.g. messaging @userinfobot) and pasted into /settings. Used to send task-assignment pings when telegramBotToken is also set. */
+  telegramChatId?: string | undefined;
 }
 
 /** A registered VPS (aaPanel) a site can deploy to. `restricted` servers require an administrator actor. */
@@ -161,6 +163,9 @@ export interface ServerRecord {
   autoImportActorEmail?: string | undefined;
   autoImportStartedAt?: string | undefined;
   autoImportFinishedAt?: string | undefined;
+  /** Live progress while autoImportStatus is "running" — so the Servers page can show real movement instead of a static "Importing…" with no way to tell whether it's working or stuck. Updated at most a few times a second from the worker's onResult callback (throttled — it fires once per site, but many sites can resolve in well under a second on a fast re-check pass). */
+  autoImportCurrentDomain?: string | undefined;
+  autoImportSitesChecked?: number | undefined;
   autoImportSummary?:
     | {
         imported: number;
@@ -302,7 +307,6 @@ export type TaskActivityAction =
   | "created"
   | "status-changed"
   | "priority-changed"
-  | "category-changed"
   | "reassigned"
   | "deadline-changed"
   | "checklist-item-added"
@@ -329,7 +333,6 @@ export interface TaskRecord {
   siteId?: string | undefined;
   title: string;
   description: string;
-  category: TaskCategory;
   priority: TaskPriority;
   status: TaskStatus;
   deadline?: string | undefined;

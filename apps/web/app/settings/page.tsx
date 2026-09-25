@@ -7,10 +7,16 @@ import { requireActorOrRedirect } from "../../lib/session";
 export default async function SettingsPage({
   searchParams
 }: {
-  searchParams: Promise<{ twoFactorEnabled?: string; twoFactorDisabled?: string; twoFactorError?: string }>;
+  searchParams: Promise<{
+    twoFactorEnabled?: string;
+    twoFactorDisabled?: string;
+    twoFactorError?: string;
+    telegramSaved?: string;
+    telegramError?: string;
+  }>;
 }) {
   const actor = await requireActorOrRedirect();
-  const { twoFactorEnabled, twoFactorDisabled, twoFactorError } = await searchParams;
+  const { twoFactorEnabled, twoFactorDisabled, twoFactorError, telegramSaved, telegramError } = await searchParams;
 
   const state = await runtime.stateStore.read();
   const user = state.users.find((item) => item.id === actor.id);
@@ -34,6 +40,37 @@ export default async function SettingsPage({
         <Link href="/servers" className="button" style={{ justifySelf: "start" }}>
           Go to Servers
         </Link>
+      </section>
+
+      <section className="card" style={{ maxWidth: 480, marginBottom: 16 }}>
+        <h2 style={{ marginTop: 0 }}>Telegram notifications</h2>
+        <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>
+          Get pinged on Telegram when a task is assigned to you. Message{" "}
+          <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer">
+            @userinfobot
+          </a>{" "}
+          on Telegram to get your numeric chat ID, paste it below, then message the team&apos;s bot once so it&apos;s
+          allowed to send you messages.
+        </p>
+        {telegramSaved ? (
+          <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 14 }}>
+            Saved.
+          </article>
+        ) : null}
+        {telegramError ? (
+          <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 14 }}>
+            {telegramError}
+          </article>
+        ) : null}
+        <form method="post" action="/api/account/telegram" style={{ display: "grid", gap: 8, maxWidth: 260 }}>
+          <label className="muted" htmlFor="chatId" style={{ fontSize: 12.5 }}>
+            Your Telegram chat ID
+          </label>
+          <input type="text" id="chatId" name="chatId" defaultValue={user?.telegramChatId ?? ""} placeholder="123456789" />
+          <button className="button" type="submit" style={{ justifySelf: "start" }}>
+            Save
+          </button>
+        </form>
       </section>
 
       <section className="card" style={{ maxWidth: 480 }}>

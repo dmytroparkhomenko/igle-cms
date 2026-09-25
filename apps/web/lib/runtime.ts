@@ -20,6 +20,8 @@ import { ServerService } from "../../../packages/core/src/server-service";
 import { SiteService } from "../../../packages/core/src/site-service";
 import { JsonStateStore } from "../../../packages/core/src/state-store";
 import { TaskService } from "../../../packages/core/src/task-service";
+import { TelegramNotifier } from "../../../packages/core/src/telegram-notifier";
+import { TelegramSettingsService } from "../../../packages/core/src/telegram-settings-service";
 import { TemplateService } from "../../../packages/core/src/template-service";
 import { VerificationService } from "../../../packages/core/src/verification-service";
 import { VultrAccountService } from "../../../packages/core/src/vultr-account-service";
@@ -37,7 +39,9 @@ const draftService = new DraftService(stateStore);
 const jobService = new JobService(stateStore);
 const mediaService = new MediaService();
 const pageService = new PageService(stateStore, revisionService);
-const taskService = new TaskService(dataDir, stateStore);
+const telegramNotifier = new TelegramNotifier(stateStore, process.env.WEB_ORIGIN ?? "http://localhost:3000");
+const telegramSettingsService = new TelegramSettingsService(stateStore);
+const taskService = new TaskService(dataDir, stateStore, telegramNotifier);
 const notificationService = new NotificationService(stateStore);
 const serverService = new ServerService(stateStore);
 const deployService = new DeployService(dataDir, stateStore, revisionService, serverService);
@@ -98,5 +102,6 @@ export const runtime = {
   domainService,
   mirrorService,
   vultrAccountService,
-  remoteSiteImportService
+  remoteSiteImportService,
+  telegramSettingsService
 };

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { taskCategoryLabels } from "@igle/shared";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
 
@@ -10,7 +9,6 @@ const activityVerb: Record<string, string> = {
   created: "created this task",
   "status-changed": "changed status",
   "priority-changed": "changed priority",
-  "category-changed": "changed category",
   reassigned: "reassigned this task",
   "deadline-changed": "changed the deadline",
   "checklist-item-added": "added a checklist item",
@@ -54,17 +52,12 @@ export default async function TaskDetailPage({
   const isOwner = actor.role === "administrator" || task.assigneeId === actor.id || task.creatorId === actor.id;
   const isAdmin = actor.role === "administrator";
 
-  const matchingMembers = members.filter((member) => member.tags.includes(task.category));
-  const otherMembers = members.filter((member) => !member.tags.includes(task.category));
-
   return (
     <>
       <div className="toolbar">
         <div>
           <h1>{task.title}</h1>
           <p className="muted">
-            {taskCategoryLabels[task.category]}
-            {" · "}
             {assignee ? assignee.name || assignee.email : "Unassigned"}
             {creator ? ` · Created by ${creator.name || creator.email}` : ""}
             {site ? (
@@ -151,22 +144,11 @@ export default async function TaskDetailPage({
             </label>
             <select id="assigneeId" name="assigneeId" defaultValue={task.assigneeId ?? ""}>
               <option value="">Unassigned</option>
-              {matchingMembers.length > 0 ? (
-                <optgroup label="Matches this category">
-                  {matchingMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name || member.email}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-              <optgroup label={matchingMembers.length > 0 ? "Everyone else" : "Everyone"}>
-                {otherMembers.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name || member.email}
-                  </option>
-                ))}
-              </optgroup>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name || member.email}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -178,18 +160,6 @@ export default async function TaskDetailPage({
               <option value="medium">Medium</option>
               <option value="high">High</option>
               <option value="urgent">Urgent</option>
-            </select>
-          </div>
-          <div>
-            <label className="muted" htmlFor="category">
-              Category
-            </label>
-            <select id="category" name="category" defaultValue={task.category}>
-              {Object.entries(taskCategoryLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
             </select>
           </div>
           <div>
@@ -205,7 +175,7 @@ export default async function TaskDetailPage({
       ) : (
         <article className="card" style={{ marginBottom: 28 }}>
           <p className="muted" style={{ margin: 0 }}>
-            Only the assignee, creator, or an administrator can edit this task's status, priority, category, deadline, or assignee.
+            Only the assignee, creator, or an administrator can edit this task's status, priority, deadline, or assignee.
           </p>
         </article>
       )}

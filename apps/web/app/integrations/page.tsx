@@ -11,9 +11,11 @@ export default async function IntegrationsPage({
   const { updated, error } = await searchParams;
 
   let affiliateLinks: Record<string, string> = {};
+  let telegramBotToken: string | undefined;
   let forbidden = false;
   try {
     affiliateLinks = await runtime.affiliateLinkService.list(actor);
+    telegramBotToken = (await runtime.telegramSettingsService.get(actor)).botToken;
   } catch (err) {
     if (err instanceof IgleError && err.code === "FORBIDDEN") forbidden = true;
     else throw err;
@@ -25,7 +27,7 @@ export default async function IntegrationsPage({
 
       {forbidden ? (
         <section className="card">
-          <p className="muted" style={{ margin: 0 }}>Only administrators can configure affiliate links.</p>
+          <p className="muted" style={{ margin: 0 }}>Only administrators can configure integrations.</p>
         </section>
       ) : (
         <>
@@ -71,6 +73,36 @@ export default async function IntegrationsPage({
               </div>
               <button className="button" type="submit" style={{ justifySelf: "start", marginTop: 4 }}>
                 Save Mexico link
+              </button>
+            </form>
+          </div>
+
+          <div className="settings-card" style={{ maxWidth: 480, marginTop: 20 }}>
+            <div className="settings-card-header">
+              <h2>Telegram notifications</h2>
+            </div>
+            <div style={{ padding: "0 20px 16px", margin: 0 }}>
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                One bot token for the whole team. Create a bot with @BotFather on Telegram, paste its token here, then each
+                team member sets their own chat ID on their <a href="/settings">account settings</a> page.
+              </p>
+            </div>
+            <form method="post" action="/api/integrations/telegram">
+              <div className="settings-section" style={{ paddingTop: 0, borderTop: "none" }}>
+                <div className="field">
+                  <label htmlFor="botToken">Bot token</label>
+                  <input
+                    type="text"
+                    id="botToken"
+                    name="botToken"
+                    defaultValue={telegramBotToken ?? ""}
+                    placeholder="123456789:AA..."
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+              <button className="button" type="submit" style={{ justifySelf: "start", marginTop: 4 }}>
+                Save bot token
               </button>
             </form>
           </div>

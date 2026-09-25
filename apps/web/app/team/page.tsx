@@ -1,4 +1,4 @@
-import { IgleError, taskCategoryLabels, type TaskCategory } from "@igle/shared";
+import { IgleError } from "@igle/shared";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
 
@@ -161,24 +161,6 @@ export default async function TeamPage({
                 <option value="administrator">Administrator</option>
                 <option value="editor">Editor</option>
               </select>
-              <button className="button" type="submit" style={{ fontSize: 12.5, padding: "5px 10px" }}>
-                Save
-              </button>
-            </form>
-            <form
-              method="post"
-              action={`/api/team/members/${member.id}/tags`}
-              style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8, flexWrap: "wrap" }}
-            >
-              <span className="muted" style={{ fontSize: 11.5 }}>
-                Task tags:
-              </span>
-              {Object.entries(taskCategoryLabels).map(([value, label]) => (
-                <label key={value} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
-                  <input type="checkbox" name="tags" value={value} defaultChecked={member.tags.includes(value as TaskCategory)} />
-                  {label}
-                </label>
-              ))}
               <button className="button" type="submit" style={{ fontSize: 12.5, padding: "5px 10px" }}>
                 Save
               </button>

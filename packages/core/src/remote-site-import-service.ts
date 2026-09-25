@@ -230,11 +230,55 @@ export class RemoteSiteImportService {
    * can host dozens of sites, and a full import can run well past any reasonable HTTP timeout.
    */
   async processPendingImports(onProgress?: ProgressCallback, onResult?: ResultCallback): Promise<void> {
+    await this.recoverStaleRunningImports();
     const state = await this.stateStore.read();
     const pendingServerIds = state.servers.filter((server) => server.kind === "aapanel" && server.autoImportStatus === "pending").map((server) => server.id);
     for (const serverId of pendingServerIds) {
       await this.processOneServer(serverId, onProgress, onResult);
     }
+  }
+
+  /**
+   * A server can be left stuck at "running" forever if the worker process dies mid-sync (a crash,
+   * an OOM kill, a container restart) — nothing else ever moves it off "running", since
+   * processPendingImports only ever picks up "pending". Confirmed live: this is exactly what
+   * happened when the state.json corruption incident interrupted an in-flight sync — the recovery
+   * restored valid JSON, but had no way to know the in-progress flag was now orphaned. Anything
+   * "running" for longer than a real sync could plausibly take gets reset to "failed" so the
+   * existing "Sync sites" button (which re-arms on non-"running" statuses) becomes usable again
+   * without needing manual state surgery.
+   */
+  private async recoverStaleRunningImports(): Promise<void> {
+    const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+    const state = await this.stateStore.read();
+    const staleServerIds = state.servers
+      .filter(
+        (server) =>
+          server.kind === "aapanel" &&
+          server.autoImportStatus === "running" &&
+          server.autoImportStartedAt &&
+          Date.now() - new Date(server.autoImportStartedAt).getTime() > STALE_AFTER_MS
+      )
+      .map((server) => server.id);
+    if (staleServerIds.length === 0) return;
+
+    await this.stateStore.update((next) => {
+      for (const serverId of staleServerIds) {
+        const record = next.servers.find((item) => item.id === serverId);
+        if (!record) continue;
+        record.autoImportStatus = "failed";
+        record.autoImportFinishedAt = new Date().toISOString();
+        record.autoImportSummary = {
+          imported: 0,
+          locked: 0,
+          relocked: 0,
+          skipped: 0,
+          excluded: 0,
+          failed: 0,
+          errors: [{ domain: "", message: "Import appears to have been interrupted (e.g. a crash or restart) and has been reset — click Sync sites to retry." }]
+        };
+      }
+    });
   }
 
   private async processOneServer(serverId: string, onProgress?: ProgressCallback, onResult?: ResultCallback): Promise<void> {
@@ -254,16 +298,44 @@ export class RemoteSiteImportService {
         record.autoImportStatus = "running";
         record.autoImportStartedAt = new Date().toISOString();
         record.autoImportFinishedAt = undefined;
+        record.autoImportCurrentDomain = undefined;
+        record.autoImportSitesChecked = 0;
       }
     });
 
+    // Throttled: onResult fires once per site, which on a fast re-check pass (most sites just
+    // report "skipped-exists" from one cheap directory listing) can be many times a second —
+    // writing state.json that often would add real, pointless lock contention against everything
+    // else in the app for no visible UI benefit.
+    let sitesChecked = 0;
+    let lastProgressWriteAt = 0;
+    const PROGRESS_WRITE_INTERVAL_MS = 2000;
+    const trackedOnResult: ResultCallback = (outcome) => {
+      sitesChecked += 1;
+      const now = Date.now();
+      if (now - lastProgressWriteAt >= PROGRESS_WRITE_INTERVAL_MS) {
+        lastProgressWriteAt = now;
+        void this.stateStore
+          .update((next) => {
+            const record = next.servers.find((item) => item.id === serverId);
+            if (record && record.autoImportStatus === "running") {
+              record.autoImportCurrentDomain = outcome.domain;
+              record.autoImportSitesChecked = sitesChecked;
+            }
+          })
+          .catch(() => undefined);
+      }
+      onResult?.(outcome);
+    };
+
     try {
-      const outcomes = await this.importAllSitesFromServer(serverId, actor, onProgress, onResult);
+      const outcomes = await this.importAllSitesFromServer(serverId, actor, onProgress, trackedOnResult);
       await this.stateStore.update((next) => {
         const record = next.servers.find((item) => item.id === serverId);
         if (record) {
           record.autoImportStatus = "done";
           record.autoImportFinishedAt = new Date().toISOString();
+          record.autoImportCurrentDomain = undefined;
           record.autoImportSummary = summarize(outcomes);
         }
       });
@@ -273,6 +345,7 @@ export class RemoteSiteImportService {
         if (record) {
           record.autoImportStatus = "failed";
           record.autoImportFinishedAt = new Date().toISOString();
+          record.autoImportCurrentDomain = undefined;
           record.autoImportSummary = {
             imported: 0,
             locked: 0,
@@ -400,6 +473,12 @@ export class RemoteSiteImportService {
   }
 }
 
+// Defensive: a real filesystem can't normally cycle, but nothing here rules out a symlink loop or
+// an aaPanel reporting quirk reflecting a directory back into itself, and this walk has no
+// visited-paths tracking to catch one. A depth this generous (no legitimate real site should ever
+// nest 40 directories deep) only ever fires on something actually pathological.
+const MAX_DIRECTORY_DEPTH = 40;
+
 async function stageRemoteDirectory(
   provider: AaPanelProvider,
   domain: string,
@@ -409,8 +488,13 @@ async function stageRemoteDirectory(
   relative: string,
   warnings: StageWarning[],
   semaphore: Semaphore,
-  onFileDone: () => void
+  onFileDone: () => void,
+  depth = 0
 ): Promise<void> {
+  if (depth > MAX_DIRECTORY_DEPTH) {
+    warnings.push({ path: relative, message: `Skipped — directory nesting exceeded ${MAX_DIRECTORY_DEPTH} levels (likely a symlink loop or reporting error, not real content).` });
+    return;
+  }
   // A directory listing that fails aborts every file and subdirectory beneath it (unlike one
   // failed file, which just becomes a warning) — confirmed live, a single transient "fetch
   // failed" here lost the rest of an otherwise-successful, thousands-of-files-deep site import.
@@ -450,7 +534,7 @@ async function stageRemoteDirectory(
   // per-directory tax into something paid mostly in parallel.
   const dirWork = listing.directories
     .filter((dirName) => !SKIP_DIRECTORY_NAMES.has(dirName))
-    .map((dirName) => stageRemoteDirectory(provider, domain, protocol, remoteRoot, localRoot, path.posix.join(relative, dirName), warnings, semaphore, onFileDone));
+    .map((dirName) => stageRemoteDirectory(provider, domain, protocol, remoteRoot, localRoot, path.posix.join(relative, dirName), warnings, semaphore, onFileDone, depth + 1));
 
   await Promise.all([...fileWork, ...dirWork]);
 }

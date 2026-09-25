@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiError, IgleError, taskCategories, type TaskCategory } from "@igle/shared";
+import { apiError, IgleError } from "@igle/shared";
 import type { TaskPriority, TaskStatus } from "@igle/core";
 import { runtime } from "../../../../../lib/runtime";
 import { requireActor, resolveRequestOrigin } from "../../../../../lib/session";
@@ -17,22 +17,17 @@ export async function POST(request: Request, context: { params: Promise<{ taskId
     const form = await request.formData();
     const status = String(form.get("status") ?? "");
     const priority = String(form.get("priority") ?? "");
-    const category = String(form.get("category") ?? "");
     const deadlineRaw = form.has("deadline") ? String(form.get("deadline") ?? "").trim() : undefined;
     const assigneeIdRaw = form.has("assigneeId") ? String(form.get("assigneeId") ?? "").trim() : undefined;
 
     if (status && !statuses.includes(status as TaskStatus)) throw new IgleError("INVALID_TASK", "Invalid status.", 400);
     if (priority && !priorities.includes(priority as TaskPriority)) throw new IgleError("INVALID_TASK", "Invalid priority.", 400);
-    if (category && !(taskCategories as readonly string[]).includes(category)) {
-      throw new IgleError("INVALID_TASK", "Invalid category.", 400);
-    }
 
     await runtime.taskService.update(
       taskId,
       {
         status: status ? (status as TaskStatus) : undefined,
         priority: priority ? (priority as TaskPriority) : undefined,
-        category: category ? (category as TaskCategory) : undefined,
         deadline: deadlineRaw === undefined ? undefined : deadlineRaw === "" ? null : deadlineRaw,
         assigneeId: assigneeIdRaw === undefined ? undefined : assigneeIdRaw === "" ? null : assigneeIdRaw
       },

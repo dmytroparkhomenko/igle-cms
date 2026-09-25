@@ -18,6 +18,8 @@ export interface ServerSummary {
   siteCount: number;
   createdAt: string;
   autoImportStatus?: ServerRecord["autoImportStatus"];
+  autoImportCurrentDomain?: ServerRecord["autoImportCurrentDomain"];
+  autoImportSitesChecked?: ServerRecord["autoImportSitesChecked"];
   autoImportSummary?: ServerRecord["autoImportSummary"];
   autoImportExcludedDomains?: ServerRecord["autoImportExcludedDomains"];
 }
@@ -59,6 +61,8 @@ export class ServerService {
         siteCount: state.sites.filter((site) => site.metadata.serverId === server.id).length,
         createdAt: server.createdAt,
         autoImportStatus: server.autoImportStatus,
+        autoImportCurrentDomain: server.autoImportCurrentDomain,
+        autoImportSitesChecked: server.autoImportSitesChecked,
         autoImportSummary: server.autoImportSummary,
         autoImportExcludedDomains: server.autoImportExcludedDomains
       }))

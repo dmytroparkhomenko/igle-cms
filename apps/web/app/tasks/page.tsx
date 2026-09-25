@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { taskCategoryLabels } from "@igle/shared";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
 
@@ -59,8 +58,6 @@ export default async function TasksPage({
 
   const listHref = `/tasks?${new URLSearchParams({ view: "list", ...(assigneeFilter !== "all" ? { assignee: assigneeFilter } : {}) }).toString()}`;
   const boardHref = `/tasks?${new URLSearchParams({ view: "board", ...(assigneeFilter !== "all" ? { assignee: assigneeFilter } : {}) }).toString()}`;
-
-  const myTags = new Set(membersById.get(actor.id)?.tags ?? []);
 
   return (
     <>
@@ -135,33 +132,17 @@ export default async function TasksPage({
         </label>
         <textarea id="description" name="description" rows={4} style={{ font: "inherit", padding: 8, borderRadius: 6, border: "1px solid var(--line)" }} />
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <div>
-            <label className="muted" htmlFor="assigneeId">
-              Assign to
-            </label>
-            <select id="assigneeId" name="assigneeId" defaultValue={actor.id}>
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name || member.email}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="muted" htmlFor="category">
-              Category
-            </label>
-            <select id="category" name="category" required>
-              {Object.entries(taskCategoryLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+        <label className="muted" htmlFor="assigneeId">
+          Assign to
+        </label>
+        <select id="assigneeId" name="assigneeId" defaultValue={actor.id}>
+          <option value="">Unassigned</option>
+          {members.map((member) => (
+            <option key={member.id} value={member.id}>
+              {member.name || member.email}
+            </option>
+          ))}
+        </select>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <div>
@@ -215,8 +196,7 @@ export default async function TasksPage({
                     <Link className="card" href={`/tasks/${task.id}`} key={task.id} style={{ display: "block", marginBottom: 10 }}>
                       <strong style={{ display: "block", marginBottom: 4 }}>{task.title}</strong>
                       <p className="muted" style={{ margin: "0 0 6px", fontSize: 12.5 }}>
-                        {taskCategoryLabels[task.category]}
-                        {task.deadline ? ` · Due ${task.deadline}` : ""}
+                        {task.deadline ? `Due ${task.deadline}` : ""}
                       </p>
                       <span className="status" style={{ color: priorityColor[task.priority], borderColor: priorityColor[task.priority], fontSize: 11 }}>
                         {task.priority}
@@ -238,16 +218,14 @@ export default async function TasksPage({
           <div className="list" style={{ marginBottom: 28 }}>
             {openTasks.map((task) => {
               const assignee = task.assigneeId ? membersById.get(task.assigneeId) : undefined;
-              const matchesMyTags = myTags.has(task.category);
               return (
                 <Link className="list-row" href={`/tasks/${task.id}`} key={task.id}>
                   <div className="main">
                     <h3>{task.title}</h3>
                     <p className="muted">
-                      {taskCategoryLabels[task.category]}
-                      {matchesMyTags ? " · Matches your tags" : ""}
-                      {task.siteId && sitesById.has(task.siteId) ? ` · ${sitesById.get(task.siteId)}` : ""}
-                      {task.deadline ? ` · Due ${task.deadline}` : ""}
+                      {[task.siteId && sitesById.has(task.siteId) ? sitesById.get(task.siteId) : undefined, task.deadline ? `Due ${task.deadline}` : undefined]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
@@ -281,8 +259,7 @@ export default async function TasksPage({
                       <div className="main">
                         <h3>{task.title}</h3>
                         <p className="muted">
-                          {taskCategoryLabels[task.category]}
-                          {task.siteId && sitesById.has(task.siteId) ? ` · ${sitesById.get(task.siteId)}` : ""}
+                          {task.siteId && sitesById.has(task.siteId) ? sitesById.get(task.siteId) : ""}
                         </p>
                       </div>
                       <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>

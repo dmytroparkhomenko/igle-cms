@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { taskCategoryLabels } from "@igle/shared";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
 
@@ -121,9 +120,7 @@ export default async function TaskDashboardPage({
             <Link className="list-row" href={`/tasks/${task.id}`} key={task.id}>
               <div className="main">
                 <h3>{task.title}</h3>
-                <p className="muted">
-                  Due {task.deadline} · {taskCategoryLabels[task.category]}
-                </p>
+                <p className="muted">Due {task.deadline}</p>
               </div>
               <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
                 {assignee ? assignee.name || assignee.email : "Unassigned"}
@@ -147,7 +144,6 @@ export default async function TaskDashboardPage({
               <p className="muted">
                 {count} open task{count === 1 ? "" : "s"}
                 {urgent > 0 ? ` · ${urgent} high/urgent` : ""}
-                {member.tags.length > 0 ? ` · ${member.tags.map((tag) => taskCategoryLabels[tag]).join(", ")}` : ""}
               </p>
             </div>
           </div>
@@ -166,8 +162,7 @@ export default async function TaskDashboardPage({
             <div className="main">
               <h3>{task.title}</h3>
               <p className="muted">
-                {taskCategoryLabels[task.category]}
-                {task.deadline ? ` · Due ${task.deadline}` : ""}
+                {task.deadline ? `Due ${task.deadline}` : ""}
               </p>
             </div>
             <span className="status">{statusLabel[task.status]}</span>

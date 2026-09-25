@@ -9,7 +9,8 @@ interface LegacyTicketRecord {
   siteId?: string;
   title: string;
   description: string;
-  specialistType: TaskRecord["category"];
+  /** Tasks no longer have a category — this legacy field is read (to skip past it) but never mapped forward. */
+  specialistType?: string;
   priority: TaskRecord["priority"];
   status: TaskRecord["status"];
   deadline?: string;
@@ -40,7 +41,6 @@ export class JsonStateStore {
           siteId: ticket.siteId,
           title: ticket.title,
           description: ticket.description,
-          category: ticket.specialistType,
           priority: ticket.priority,
           status: ticket.status,
           deadline: ticket.deadline,
@@ -70,7 +70,13 @@ export class JsonStateStore {
       // AuthService.getActorForSession, so the stale stored field is dropped rather than migrated.
       for (const user of state.users) {
         delete (user as { canDeployRestricted?: unknown }).canDeployRestricted;
-        user.tags ??= [];
+        // Task tags/categories (developer/designer/seo/copywriter) were removed — team members
+        // are now only ever administrator or editor.
+        delete (user as { tags?: unknown }).tags;
+      }
+      for (const task of state.tasks) {
+        delete (task as { category?: unknown }).category;
+        task.activity = task.activity.filter((entry) => (entry.action as string) !== "category-changed");
       }
       // Migration: every server was an aaPanel server before CloudPanel/Vultr support existed.
       for (const server of state.servers) {

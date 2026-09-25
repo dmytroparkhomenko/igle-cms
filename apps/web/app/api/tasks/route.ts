@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { apiError, IgleError, taskCategories, type TaskCategory } from "@igle/shared";
+import { apiError, IgleError } from "@igle/shared";
 import type { TaskPriority } from "@igle/core";
 import { runtime } from "../../../lib/runtime";
 import { requireActor, resolveRequestOrigin } from "../../../lib/session";
@@ -15,15 +15,11 @@ export async function POST(request: Request) {
     const form = await request.formData();
     const title = String(form.get("title") ?? "");
     const description = String(form.get("description") ?? "");
-    const category = String(form.get("category") ?? "") as TaskCategory;
     const priority = String(form.get("priority") ?? "medium") as TaskPriority;
     const siteIdRaw = String(form.get("siteId") ?? "").trim();
     const deadlineRaw = String(form.get("deadline") ?? "").trim();
     const assigneeIdRaw = String(form.get("assigneeId") ?? "").trim();
 
-    if (!(taskCategories as readonly string[]).includes(category)) {
-      throw new IgleError("INVALID_TASK", "Choose a valid category.", 400);
-    }
     if (!priorities.includes(priority)) {
       throw new IgleError("INVALID_TASK", "Choose a valid priority.", 400);
     }
@@ -32,7 +28,6 @@ export async function POST(request: Request) {
       {
         title,
         description,
-        category,
         priority,
         siteId: siteIdRaw === "" ? undefined : siteIdRaw,
         deadline: deadlineRaw === "" ? undefined : deadlineRaw,

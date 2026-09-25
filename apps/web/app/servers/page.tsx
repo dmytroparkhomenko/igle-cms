@@ -500,14 +500,19 @@ export default async function ServersPage({
 
 function importStatusLabel(server: {
   autoImportStatus?: string | undefined;
+  autoImportCurrentDomain?: string | undefined;
+  autoImportSitesChecked?: number | undefined;
   autoImportSummary?: { imported: number; locked: number; relocked: number; skipped: number; excluded: number; failed: number; errors: Array<{ domain: string; message: string }> } | undefined;
 }): string {
   const summary = server.autoImportSummary;
   switch (server.autoImportStatus) {
     case "pending":
       return "Site import queued.";
-    case "running":
-      return "Importing sites from this server…";
+    case "running": {
+      const checked = server.autoImportSitesChecked;
+      if (!checked) return "Importing sites from this server…";
+      return `Importing sites from this server… (${checked} checked so far${server.autoImportCurrentDomain ? `, currently: ${server.autoImportCurrentDomain}` : ""})`;
+    }
     case "done":
       if (!summary) return "Site import finished.";
       return `Site import: ${summary.imported} imported${summary.locked > 0 ? ` (${summary.locked} locked — WordPress/MODX)` : ""}, ${summary.skipped} already here${summary.relocked > 0 ? ` (${summary.relocked} newly locked on re-check)` : ""}${summary.excluded > 0 ? `, ${summary.excluded} excluded` : ""}${summary.failed > 0 ? `, ${summary.failed} failed` : ""}.`;

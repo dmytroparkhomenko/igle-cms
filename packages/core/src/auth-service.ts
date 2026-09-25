@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import * as OTPAuth from "otpauth";
-import { assertCan, IgleError, taskCategories, type Actor, type TaskCategory } from "@igle/shared";
+import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { JsonStateStore, id } from "./state-store.js";
 import type { UserRecord } from "./types.js";
 
@@ -59,8 +59,6 @@ export interface TeamMemberSummary {
   email: string;
   name: string;
   role: "administrator" | "editor";
-  /** Descriptive task-assignment tags — not a permission. */
-  tags: TaskCategory[];
   twoFactorEnabled: boolean;
   createdAt: string;
   lockedUntil?: string | undefined;
@@ -104,11 +102,11 @@ export class AuthService {
     });
   }
 
-  /** Every team member's id/name/email/tags, no admin gate — for pickers like a task's assignee, where any signed-in member needs to see who's on the team, not just administrators. */
-  async listSelectable(_actor: Actor): Promise<Array<{ id: string; name: string; email: string; tags: TaskCategory[] }>> {
+  /** Every team member's id/name/email, no admin gate — for pickers like a task's assignee, where any signed-in member needs to see who's on the team, not just administrators. */
+  async listSelectable(_actor: Actor): Promise<Array<{ id: string; name: string; email: string }>> {
     const state = await this.stateStore.read();
     return state.users
-      .map((user) => ({ id: user.id, name: user.name, email: user.email, tags: user.tags }))
+      .map((user) => ({ id: user.id, name: user.name, email: user.email }))
       .sort((a, b) => a.email.localeCompare(b.email));
   }
 
@@ -121,23 +119,11 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role,
-        tags: user.tags,
         twoFactorEnabled: user.twoFactorEnabled,
         createdAt: user.createdAt,
         lockedUntil: user.lockedUntil
       }))
       .sort((a, b) => a.email.localeCompare(b.email));
-  }
-
-  /** Admin-only. Descriptive task-assignment tags for this member — not a permission grant, just what shows up first in a task's assignee picker. */
-  async setUserTags(userId: string, tags: TaskCategory[], actor: Actor): Promise<void> {
-    assertCan(actor, "users.manage");
-    const uniqueValidTags = [...new Set(tags)].filter((tag) => (taskCategories as readonly string[]).includes(tag));
-    await this.stateStore.update((state) => {
-      const user = state.users.find((item) => item.id === userId);
-      if (!user) throw new IgleError("USER_NOT_FOUND", "Member was not found.", 404);
-      user.tags = uniqueValidTags;
-    });
   }
 
   async addTeamMember(input: { email: string; name?: string; role: "administrator" | "editor" }, actor: Actor): Promise<UserRecord> {
@@ -505,6 +491,19 @@ export class AuthService {
     });
   }
 
+  /** Self-service, no admin gate — a user linking their own Telegram account for task-assignment pings. An empty chatId clears it. */
+  async setMyTelegramChatId(actor: Actor, chatId: string): Promise<void> {
+    const trimmed = chatId.trim();
+    if (trimmed && !/^-?\d{1,20}$/.test(trimmed)) {
+      throw new IgleError("INVALID_TELEGRAM_CHAT_ID", "That doesn't look like a Telegram chat ID — it should be all digits.", 400);
+    }
+    await this.stateStore.update((state) => {
+      const user = state.users.find((item) => item.id === actor.id);
+      if (!user) throw new IgleError("USER_NOT_FOUND", "User does not exist.", 404);
+      user.telegramChatId = trimmed || undefined;
+    });
+  }
+
   private async createUserRecord(email: string, password: string, name: string, role: "administrator" | "editor"): Promise<UserRecord> {
     return this.createUserRecordWithHash(email, await bcrypt.hash(password, 12), name, role);
   }
@@ -516,7 +515,6 @@ export class AuthService {
       name,
       role,
       passwordHash,
-      tags: [],
       twoFactorEnabled: false,
       requireTwoFactor: false,
       failedLoginCount: 0,
