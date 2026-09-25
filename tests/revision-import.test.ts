@@ -56,6 +56,30 @@ describe("revision and import services", () => {
     expect(site.metadata.domain).toBeUndefined();
   });
 
+  it("never lets two concurrent settings saves assign the same domain to different sites", async () => {
+    // Reproduces the real production bug: two aaPanel import runs racing on the same server each
+    // read state before the other's write landed, and both passed the domain-uniqueness check —
+    // leaving two sites with the identical domain. updateSettings() re-checks atomically inside
+    // its stateStore.update() mutator specifically to close this window.
+    const runtime = await testRuntime();
+    const siteA = await runtime.siteService.createBlankSite({ name: "Racer A", slug: "racer-a" }, admin);
+    const siteB = await runtime.siteService.createBlankSite({ name: "Racer B", slug: "racer-b" }, admin);
+
+    const results = await Promise.allSettled([
+      runtime.siteService.updateSettings(siteA, { domain: "raced.example" }, admin),
+      runtime.siteService.updateSettings(siteB, { domain: "raced.example" }, admin)
+    ]);
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+
+    const state = await runtime.stateStore.read();
+    const holders = state.sites.filter((item) => item.metadata.domain === "raced.example");
+    expect(holders).toHaveLength(1);
+  });
+
   it("rejects dangerous import paths", async () => {
     const runtime = await testRuntime();
     expect(runtime.importService.validateEntry("../escape.html").ok).toBe(false);

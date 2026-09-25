@@ -17,7 +17,8 @@ export default async function SitesPage({
 }: {
   searchParams: Promise<{ imported?: string; importError?: string; deleted?: string }>;
 }) {
-  const sites = await runtime.siteService.list((await requireActorOrRedirect()));
+  const actor = await requireActorOrRedirect();
+  const sites = await runtime.siteService.list(actor);
   const state = await runtime.stateStore.read();
   const { imported, importError, deleted } = await searchParams;
   const previewOrigin = process.env.PREVIEW_ORIGIN ?? "http://localhost:3001";
@@ -72,6 +73,11 @@ export default async function SitesPage({
           <h1>Sites</h1>
           <p className="muted">{sites.length} site{sites.length === 1 ? "" : "s"}</p>
         </div>
+        {actor.role === "administrator" ? (
+          <Link href="/sites/duplicates" className="button button-ghost">
+            Review duplicates
+          </Link>
+        ) : null}
       </div>
       {imported ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>

@@ -5,8 +5,11 @@ import { AaPanelProvider, type AaPanelSiteSummary } from "@igle/deployer";
 import { IgleError, type Actor } from "@igle/shared";
 import { ImportService } from "./import-service.js";
 import { SiteService } from "./site-service.js";
-import { JsonStateStore } from "./state-store.js";
-import type { ServerRecord, SiteRecord } from "./types.js";
+import { JsonStateStore, id } from "./state-store.js";
+import type { ImportRunEntry, ImportRunRecord, ServerRecord, SiteRecord } from "./types.js";
+
+/** How many past runs to keep per server, oldest trimmed first — bounds state.json growth while still giving real debugging history. */
+const RUNS_KEPT_PER_SERVER = 10;
 
 export interface RemoteSiteImportOutcome {
   domain: string;
@@ -75,6 +78,7 @@ export interface RemoteSiteImportProgress {
 
 type ProgressCallback = (progress: RemoteSiteImportProgress) => void;
 type ResultCallback = (outcome: RemoteSiteImportOutcome) => void;
+type TotalCallback = (total: number) => void;
 
 /**
  * Bounds total concurrent aaPanel requests (directory listings + file reads together) across an
@@ -121,6 +125,21 @@ class Semaphore {
  * definition.
  */
 export class RemoteSiteImportService {
+  /**
+   * Server IDs this process currently has an import actually running for — checked before
+   * starting a new run and before treating a "running" status as orphaned. Exists because
+   * resetting `autoImportStatus` back to "pending"/"failed" (recoverStaleRunningImports, or an
+   * admin re-clicking "Sync sites") does not, on its own, stop the original run's in-flight
+   * `importAllSitesFromServer` call — there is no cancellation plumbed through this pipeline. Two
+   * copies of the same server's import running at once each take their own stale snapshot of
+   * "sites already imported" and can both decide the same domain is new, race to assign it, and
+   * leave one copy of the site without its domain when the loser hits DOMAIN_IN_USE — confirmed as
+   * the actual mechanism behind duplicate imports in production. In-memory (not persisted) is
+   * correct here: it should NOT survive a worker restart, since a restart is exactly what makes a
+   * "running" flag genuinely orphaned rather than just slow.
+   */
+  private readonly runningServerIds = new Set<string>();
+
   constructor(
     private readonly stateStore: JsonStateStore,
     private readonly siteService: SiteService,
@@ -128,7 +147,13 @@ export class RemoteSiteImportService {
   ) {}
 
   /** Every aaPanel-hosted domain not already tracked in Igle CMS, imported one at a time. Slow — intended to run in the background worker, never inline in a request handler. */
-  async importAllSitesFromServer(serverId: string, actor: Actor, onProgress?: ProgressCallback, onResult?: ResultCallback): Promise<RemoteSiteImportOutcome[]> {
+  async importAllSitesFromServer(
+    serverId: string,
+    actor: Actor,
+    onProgress?: ProgressCallback,
+    onResult?: ResultCallback,
+    onTotal?: TotalCallback
+  ): Promise<RemoteSiteImportOutcome[]> {
     const state = await this.stateStore.read();
     const server = state.servers.find((item) => item.id === serverId);
     if (!server) throw new IgleError("SERVER_NOT_FOUND", "That server was not found.", 404);
@@ -138,6 +163,7 @@ export class RemoteSiteImportService {
 
     const provider = new AaPanelProvider({ baseUrl: server.baseUrl, apiKey: server.apiKey });
     const remoteSites = await provider.listSites();
+    onTotal?.(remoteSites.length);
     const existingDomains = new Set(state.sites.map((item) => item.metadata.domain).filter((domain): domain is string => Boolean(domain)));
     const existingSlugs = new Set(state.sites.map((item) => item.slug));
     const excludedDomains = new Set((server.autoImportExcludedDomains ?? []).map((domain) => domain.toLowerCase()));
@@ -247,6 +273,13 @@ export class RemoteSiteImportService {
    * "running" for longer than a real sync could plausibly take gets reset to "failed" so the
    * existing "Sync sites" button (which re-arms on non-"running" statuses) becomes usable again
    * without needing manual state surgery.
+   *
+   * Critically, this only resets a server if `runningServerIds` (this process's own bookkeeping)
+   * doesn't have it — a server this process is still actually working on is not orphaned, just
+   * slow, and resetting its flag anyway is what let a second concurrent run start and race the
+   * first (see the `runningServerIds` doc comment). A flag orphaned by a *previous* process (one
+   * that crashed and was replaced) is still caught correctly: the new process's `runningServerIds`
+   * starts empty, so nothing here shields a genuinely dead run.
    */
   private async recoverStaleRunningImports(): Promise<void> {
     const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
@@ -257,7 +290,8 @@ export class RemoteSiteImportService {
           server.kind === "aapanel" &&
           server.autoImportStatus === "running" &&
           server.autoImportStartedAt &&
-          Date.now() - new Date(server.autoImportStartedAt).getTime() > STALE_AFTER_MS
+          Date.now() - new Date(server.autoImportStartedAt).getTime() > STALE_AFTER_MS &&
+          !this.runningServerIds.has(server.id)
       )
       .map((server) => server.id);
     if (staleServerIds.length === 0) return;
@@ -277,11 +311,18 @@ export class RemoteSiteImportService {
           failed: 0,
           errors: [{ domain: "", message: "Import appears to have been interrupted (e.g. a crash or restart) and has been reset — click Sync sites to retry." }]
         };
+        const run = next.importRuns?.find((item) => item.serverId === serverId && item.status === "running");
+        if (run) {
+          run.status = "failed";
+          run.finishedAt = record.autoImportFinishedAt;
+          run.runError = "Interrupted — the process that was running this import is gone (crash or restart). Click Sync sites to retry.";
+        }
       }
     });
   }
 
   private async processOneServer(serverId: string, onProgress?: ProgressCallback, onResult?: ResultCallback): Promise<void> {
+    if (this.runningServerIds.has(serverId)) return;
     const state = await this.stateStore.read();
     const server = state.servers.find((item) => item.id === serverId);
     if (!server || server.autoImportStatus !== "pending") return;
@@ -292,6 +333,7 @@ export class RemoteSiteImportService {
       role: "administrator"
     };
 
+    const runId = id("importrun");
     await this.stateStore.update((next) => {
       const record = next.servers.find((item) => item.id === serverId);
       if (record) {
@@ -301,62 +343,118 @@ export class RemoteSiteImportService {
         record.autoImportCurrentDomain = undefined;
         record.autoImportSitesChecked = 0;
       }
+      next.importRuns ??= [];
+      next.importRuns.push({
+        id: runId,
+        serverId,
+        serverName: server.name,
+        status: "running",
+        startedAt: new Date().toISOString(),
+        actorEmail: actor.email,
+        sitesChecked: 0,
+        entries: []
+      });
+      trimImportRuns(next.importRuns, serverId);
     });
 
-    // Throttled: onResult fires once per site, which on a fast re-check pass (most sites just
-    // report "skipped-exists" from one cheap directory listing) can be many times a second —
-    // writing state.json that often would add real, pointless lock contention against everything
-    // else in the app for no visible UI benefit.
-    let sitesChecked = 0;
-    let lastProgressWriteAt = 0;
-    const PROGRESS_WRITE_INTERVAL_MS = 2000;
-    const trackedOnResult: ResultCallback = (outcome) => {
-      sitesChecked += 1;
-      const now = Date.now();
-      if (now - lastProgressWriteAt >= PROGRESS_WRITE_INTERVAL_MS) {
-        lastProgressWriteAt = now;
-        void this.stateStore
-          .update((next) => {
-            const record = next.servers.find((item) => item.id === serverId);
-            if (record && record.autoImportStatus === "running") {
-              record.autoImportCurrentDomain = outcome.domain;
-              record.autoImportSitesChecked = sitesChecked;
-            }
-          })
-          .catch(() => undefined);
-      }
-      onResult?.(outcome);
-    };
-
+    this.runningServerIds.add(serverId);
     try {
-      const outcomes = await this.importAllSitesFromServer(serverId, actor, onProgress, trackedOnResult);
-      await this.stateStore.update((next) => {
-        const record = next.servers.find((item) => item.id === serverId);
-        if (record) {
-          record.autoImportStatus = "done";
-          record.autoImportFinishedAt = new Date().toISOString();
-          record.autoImportCurrentDomain = undefined;
-          record.autoImportSummary = summarize(outcomes);
+      // Throttled the same way as autoImportCurrentDomain below, and for the same reason: a fast
+      // re-check pass (most sites just report "skipped-exists" from one cheap directory listing)
+      // can call onResult many times a second, and writing state.json that often would add real
+      // lock contention against everything else in the app. Entries are buffered here and flushed
+      // together on the same cadence — nothing is dropped, they just land in fewer writes.
+      let sitesChecked = 0;
+      let pendingEntries: ImportRunEntry[] = [];
+      let lastProgressWriteAt = 0;
+      const PROGRESS_WRITE_INTERVAL_MS = 2000;
+      const flush = async (extra?: (run: ImportRunRecord) => void) => {
+        const entriesToFlush = pendingEntries;
+        pendingEntries = [];
+        await this.stateStore.update((next) => {
+          const record = next.servers.find((item) => item.id === serverId);
+          if (record && record.autoImportStatus === "running") {
+            record.autoImportCurrentDomain = entriesToFlush.at(-1)?.domain ?? record.autoImportCurrentDomain;
+            record.autoImportSitesChecked = sitesChecked;
+          }
+          const run = next.importRuns?.find((item) => item.id === runId);
+          if (run) {
+            run.entries.push(...entriesToFlush);
+            run.sitesChecked = sitesChecked;
+            if (entriesToFlush.length > 0) run.currentDomain = entriesToFlush.at(-1)!.domain;
+            extra?.(run);
+          }
+        });
+      };
+
+      const trackedOnResult: ResultCallback = (outcome) => {
+        sitesChecked += 1;
+        pendingEntries.push({
+          domain: outcome.domain,
+          status: outcome.status,
+          siteId: outcome.siteId,
+          message: outcome.error ?? outcome.warnings?.join(" "),
+          at: new Date().toISOString()
+        });
+        const now = Date.now();
+        if (now - lastProgressWriteAt >= PROGRESS_WRITE_INTERVAL_MS) {
+          lastProgressWriteAt = now;
+          void flush().catch(() => undefined);
         }
-      });
-    } catch (error) {
-      await this.stateStore.update((next) => {
-        const record = next.servers.find((item) => item.id === serverId);
-        if (record) {
-          record.autoImportStatus = "failed";
-          record.autoImportFinishedAt = new Date().toISOString();
-          record.autoImportCurrentDomain = undefined;
-          record.autoImportSummary = {
-            imported: 0,
-            locked: 0,
-            relocked: 0,
-            skipped: 0,
-            excluded: 0,
-            failed: 0,
-            errors: [{ domain: "", message: error instanceof Error ? error.message : "Import failed." }]
-          };
-        }
-      });
+        onResult?.(outcome);
+      };
+
+      try {
+        const outcomes = await this.importAllSitesFromServer(serverId, actor, onProgress, trackedOnResult, (total) => {
+          void this.stateStore
+            .update((next) => {
+              const run = next.importRuns?.find((item) => item.id === runId);
+              if (run) run.sitesTotal = total;
+            })
+            .catch(() => undefined);
+        });
+        await flush((run) => {
+          run.status = "done";
+          run.finishedAt = new Date().toISOString();
+          run.currentDomain = undefined;
+        });
+        await this.stateStore.update((next) => {
+          const record = next.servers.find((item) => item.id === serverId);
+          if (record) {
+            record.autoImportStatus = "done";
+            record.autoImportFinishedAt = new Date().toISOString();
+            record.autoImportCurrentDomain = undefined;
+            record.autoImportSummary = summarize(outcomes);
+          }
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Import failed.";
+        await flush((run) => {
+          run.status = "failed";
+          run.finishedAt = new Date().toISOString();
+          run.currentDomain = undefined;
+          run.runError = message;
+        });
+        await this.stateStore.update((next) => {
+          const record = next.servers.find((item) => item.id === serverId);
+          if (record) {
+            record.autoImportStatus = "failed";
+            record.autoImportFinishedAt = new Date().toISOString();
+            record.autoImportCurrentDomain = undefined;
+            record.autoImportSummary = {
+              imported: 0,
+              locked: 0,
+              relocked: 0,
+              skipped: 0,
+              excluded: 0,
+              failed: 0,
+              errors: [{ domain: "", message }]
+            };
+          }
+        });
+      }
+    } finally {
+      this.runningServerIds.delete(serverId);
     }
   }
 
@@ -614,6 +712,20 @@ async function fetchLiveAsset(domain: string, preferredProtocol: "https" | "http
     }
   }
   return undefined;
+}
+
+/** Keeps only the most recent RUNS_KEPT_PER_SERVER runs for one server, oldest dropped first — mutates in place. Other servers' runs are untouched. */
+function trimImportRuns(runs: ImportRunRecord[], serverId: string): void {
+  const forThisServer = runs.filter((run) => run.serverId === serverId);
+  if (forThisServer.length <= RUNS_KEPT_PER_SERVER) return;
+  const toDrop = forThisServer
+    .slice()
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+    .slice(0, forThisServer.length - RUNS_KEPT_PER_SERVER);
+  const dropIds = new Set(toDrop.map((run) => run.id));
+  const kept = runs.filter((run) => !dropIds.has(run.id));
+  runs.length = 0;
+  runs.push(...kept);
 }
 
 function summarize(outcomes: RemoteSiteImportOutcome[]): NonNullable<ServerRecord["autoImportSummary"]> {

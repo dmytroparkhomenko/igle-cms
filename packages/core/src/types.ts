@@ -113,6 +113,44 @@ export interface CoreState {
   taskDeadlineCheckAt?: string | undefined;
   /** One shared bot token for task-assignment Telegram notifications — see TelegramSettingsService/TelegramNotifier. Admin-set on /integrations. */
   telegramBotToken?: string | undefined;
+  /** Full per-domain history of aaPanel auto-import runs — see RemoteSiteImportService and ImportRunRecord. Trimmed to the most recent runs per server so this doesn't grow unbounded. */
+  importRuns?: ImportRunRecord[] | undefined;
+}
+
+export type ImportRunEntryStatus = "imported" | "imported-locked" | "relocked" | "skipped-exists" | "excluded" | "failed";
+
+/** One row of an import run's log — one per domain aaPanel reported, in the order it was processed. */
+export interface ImportRunEntry {
+  domain: string;
+  status: ImportRunEntryStatus;
+  siteId?: string | undefined;
+  /** Warning or error text, when there is any — e.g. the domain-already-in-use case that leaves a site without its domain set. */
+  message?: string | undefined;
+  at: string;
+}
+
+/**
+ * A single "Sync sites" run against one aaPanel server, with a full per-domain log — the detail
+ * `ServerRecord.autoImportSummary` (aggregate counts only, overwritten by the next run) can't
+ * provide. Exists specifically so an import can be inspected/debugged after the fact and so two
+ * runs against the same server are distinguishable, instead of just a single "last known status."
+ */
+export interface ImportRunRecord {
+  id: string;
+  serverId: string;
+  /** Denormalized so the run stays readable even if the server is later renamed or removed. */
+  serverName: string;
+  status: "running" | "done" | "failed";
+  startedAt: string;
+  finishedAt?: string | undefined;
+  actorEmail: string;
+  /** Known as soon as aaPanel's site listing comes back — lets the UI show a real X/Y progress bar rather than just a running count. */
+  sitesTotal?: number | undefined;
+  sitesChecked: number;
+  currentDomain?: string | undefined;
+  /** Set only when the whole run threw before producing a summary (e.g. the panel was unreachable) — distinct from a per-domain failure, which shows up as an entry instead. */
+  runError?: string | undefined;
+  entries: ImportRunEntry[];
 }
 
 export interface UserRecord {

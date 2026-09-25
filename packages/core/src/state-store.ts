@@ -109,7 +109,8 @@ export class JsonStateStore {
         pendingTwoFactor: [],
         cloudflareAccounts: [],
         vultrAccounts: [],
-        domains: []
+        domains: [],
+        importRuns: []
       };
     }
   }

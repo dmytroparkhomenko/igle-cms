@@ -187,7 +187,12 @@ export class SiteService {
     if (domain && !DOMAIN_PATTERN.test(domain)) {
       throw new IgleError("INVALID_DOMAIN", "Enter a valid domain, e.g. example.com.", 400, { domain });
     }
-    if (domain && domain !== site.metadata.domain) {
+    // Captured now, before `site.metadata` is reassigned further down — the atomic re-check
+    // inside the stateStore.update() mutator below needs to know whether the domain is actually
+    // changing, and by the time that mutator runs, `site.metadata.domain` no longer reflects the
+    // original value to compare against.
+    const domainChanged = Boolean(domain && domain !== site.metadata.domain);
+    if (domainChanged) {
       const state = await this.stateStore.read();
       const conflict = state.sites.find((item) => item.id !== site.id && item.metadata.domain === domain);
       if (conflict) {
@@ -276,6 +281,26 @@ export class SiteService {
     await writeSiteMetadata(site.repoPath, metadata);
     site.metadata = metadata;
     await this.stateStore.update((state) => {
+      // Re-checked here, atomically, even though the same conflict was already checked above —
+      // that earlier check reads state unlocked, and everything between it and this point (a
+      // file write, sometimes a server lookup) is an async window another concurrent call can
+      // land in. Confirmed as a real, not just theoretical, race: two sites ended up holding the
+      // identical domain in production after two aaPanel imports of the same server ran at once,
+      // each passing the early check before the other's write had landed. This inner check is
+      // what actually prevents state.sites (the source of truth everywhere else in the app) from
+      // ever holding two sites with the same domain. If it does throw here, `metadata` was
+      // already written to this site's own repo and onto the in-memory `site` object above —
+      // that's a narrow, hard-to-fully-close residual gap (fixing it means reordering the file
+      // write after the state check, a bigger change than this bug warrants), but it self-heals
+      // on the caller's very next successful settings save, and it's now rare in practice: the
+      // one confirmed real-world trigger (concurrent aaPanel import runs racing on one server) is
+      // fixed at its source in RemoteSiteImportService.
+      if (domainChanged) {
+        const conflict = state.sites.find((item) => item.id !== site.id && item.metadata.domain === domain);
+        if (conflict) {
+          throw new IgleError("DOMAIN_IN_USE", `"${domain}" is already assigned to "${conflict.metadata.name}".`, 409, { domain });
+        }
+      }
       const existing = state.sites.find((item) => item.id === site.id);
       if (existing) existing.metadata = metadata;
     });

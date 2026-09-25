@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { IgleError } from "@igle/shared";
+import { AutoRefresh } from "../AutoRefresh";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
 
@@ -76,13 +77,19 @@ export default async function ServersPage({
     }
   }
 
+  const anyImportRunning = servers.some((server) => server.autoImportStatus === "running");
+
   return (
     <>
+      {anyImportRunning ? <AutoRefresh /> : null}
       <div className="toolbar">
         <div>
           <h1>Servers</h1>
           <p className="muted">Register each VPS sites can deploy to. Mark one Restricted to limit who can deploy there.</p>
         </div>
+        <Link href="/servers/imports" className="button button-ghost">
+          Import activity
+        </Link>
       </div>
 
       {error ? (
@@ -349,7 +356,14 @@ export default async function ServersPage({
                   {server.credentialPreview} · {server.siteCount} site{server.siteCount === 1 ? "" : "s"}
                   {server.publicIp ? ` · DNS target ${server.publicIp}` : " · no public IP set for DNS"}
                 </p>
-                {server.kind === "aapanel" && server.autoImportStatus ? <p className="muted" style={{ fontSize: 12.5 }}>{importStatusLabel(server)}</p> : null}
+                {server.kind === "aapanel" && server.autoImportStatus ? (
+                  <p className="muted" style={{ fontSize: 12.5 }}>
+                    {importStatusLabel(server)}{" "}
+                    <Link href={`/servers/imports?server=${server.id}`} style={{ color: "var(--accent)" }}>
+                      View log
+                    </Link>
+                  </p>
+                ) : null}
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                 <form method="post" action="/api/settings/aapanel/test">
