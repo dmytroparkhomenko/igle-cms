@@ -261,7 +261,7 @@ export default async function ServersPage({
                         </button>
                       </form>
                       <form method="post" action={`/api/vultr-accounts/${account.id}/delete`}>
-                        <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                        <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                           Remove
                         </button>
                       </form>
@@ -372,7 +372,7 @@ export default async function ServersPage({
                 ) : null}
                 {server.siteCount === 0 ? (
                   <form method="post" action={`/api/servers/${server.id}/delete`}>
-                    <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                    <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                       Remove
                     </button>
                   </form>

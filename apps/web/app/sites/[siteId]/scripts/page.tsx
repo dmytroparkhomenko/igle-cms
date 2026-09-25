@@ -175,11 +175,9 @@ export default async function ScriptsPage({
               action={`/api/sites/${site.id}/verifications/${verification.id}/delete`}
             >
               <button
-                className="button"
+                className="button button-danger"
                 type="submit"
                 style={{
-                  background: "none",
-                  color: "var(--warn)",
                   fontSize: 12.5,
                   padding: "6px 10px",
                 }}
@@ -316,11 +314,9 @@ export default async function ScriptsPage({
               action={`/api/sites/${site.id}/scripts/${script.id}/delete`}
             >
               <button
-                className="button"
+                className="button button-danger"
                 type="submit"
                 style={{
-                  background: "none",
-                  color: "var(--warn)",
                   fontSize: 12.5,
                   padding: "6px 10px",
                 }}

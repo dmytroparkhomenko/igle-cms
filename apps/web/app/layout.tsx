@@ -1,10 +1,13 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { Inter } from "next/font/google";
 import { headers } from "next/headers";
 import { Nav } from "./Nav";
 import { runtime } from "../lib/runtime";
 import { getCurrentActor } from "../lib/session";
+
+const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
   title: "Igle CMS",
@@ -15,7 +18,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const pathname = (await headers()).get("x-pathname") ?? "";
   if (pathname.startsWith("/login")) {
     return (
-      <html lang="en">
+      <html lang="en" className={inter.variable}>
         <body>{children}</body>
       </html>
     );
@@ -25,11 +28,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   const unreadCount = actor ? await runtime.notificationService.unreadCount(actor) : 0;
 
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body>
         <div className="shell">
           <aside className="sidebar">
-            <div className="brand">Igle CMS</div>
+            <div className="brand">
+              <span className="brand-mark">IG</span>
+              <span>Igle CMS</span>
+            </div>
             <Nav showTeam={actor?.role === "administrator"} />
             {actor ? (
               <div className="sidebar-account">
@@ -40,7 +46,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   Notifications{unreadCount > 0 ? ` (${unreadCount})` : ""}
                 </a>
                 <form method="post" action="/api/auth/logout">
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", padding: "4px 0", fontSize: 12.5 }}>
+                  <button className="button button-ghost" type="submit" style={{ padding: "4px 0", fontSize: 12.5, color: "var(--accent)" }}>
                     Sign out
                   </button>
                 </form>

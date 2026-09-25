@@ -161,7 +161,7 @@ export default async function DomainsPage({
                   </form>
                 ) : null}
                 <form method="post" action={`/api/domains/${domain.id}/delete`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                  <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                     Disconnect
                   </button>
                 </form>

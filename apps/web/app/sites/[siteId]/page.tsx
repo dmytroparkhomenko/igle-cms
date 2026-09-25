@@ -717,7 +717,7 @@ export default async function SiteDetailPage({
                   </form>
                 ) : null}
                 <form method="post" action={`/api/sites/${site.id}/mirror/disconnect`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                  <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                     Disconnect
                   </button>
                 </form>
@@ -1024,12 +1024,12 @@ export default async function SiteDetailPage({
         style={{ marginBottom: 28, maxWidth: 480 }}
       >
         <summary
-          style={{ cursor: "pointer", fontWeight: 600, color: "var(--warn)" }}
+          style={{ cursor: "pointer", fontWeight: 600, color: "var(--danger)" }}
         >
           Danger Zone
         </summary>
         {deleteError ? (
-          <p style={{ color: "var(--warn)", fontSize: 12.5 }}>{deleteError}</p>
+          <p style={{ color: "var(--danger)", fontSize: 12.5 }}>{deleteError}</p>
         ) : null}
         <form
           method="post"
@@ -1051,8 +1051,8 @@ export default async function SiteDetailPage({
             className="button"
             type="submit"
             style={{
-              background: "var(--warn)",
-              borderColor: "var(--warn)",
+              background: "var(--danger)",
+              borderColor: "var(--danger)",
               justifySelf: "start",
             }}
           >

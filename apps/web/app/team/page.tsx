@@ -174,7 +174,7 @@ export default async function TeamPage({
             ) : null}
             {member.id !== actor.id ? (
               <form method="post" action={`/api/team/members/${member.id}/remove`} style={{ marginLeft: 8 }}>
-                <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px" }}>
+                <button className="button button-danger" type="submit" style={{ fontSize: 12.5, padding: "6px 10px" }}>
                   Remove
                 </button>
               </form>

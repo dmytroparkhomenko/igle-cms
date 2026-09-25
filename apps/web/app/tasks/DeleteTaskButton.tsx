@@ -26,7 +26,7 @@ export function DeleteTaskButton({ taskId, title, redirectTo = "/tasks?deleted=1
   }
 
   return (
-    <button type="button" className="button" style={{ background: "none", color: "var(--warn)" }} onClick={remove} disabled={pending}>
+    <button type="button" className="button button-danger" onClick={remove} disabled={pending}>
       {pending ? "Deleting…" : "Delete"}
     </button>
   );

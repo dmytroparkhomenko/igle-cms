@@ -473,7 +473,7 @@ export function VisualEditorClient({
                 <button type="button" className="button" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }} onClick={duplicateBlock}>
                   Duplicate block
                 </button>
-                <button type="button" className="button" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }} onClick={removeBlock}>
+                <button type="button" className="button button-danger" style={{ fontSize: 12.5 }} onClick={removeBlock}>
                   Remove block
                 </button>
               </div>

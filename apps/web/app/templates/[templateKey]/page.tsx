@@ -32,7 +32,7 @@ export default async function TemplateDetailPage({
         <div style={{ display: "flex", gap: 10 }}>
           {template.source === "custom" ? (
             <form method="post" action={`/api/templates/${template.key}/delete`}>
-              <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", borderColor: "var(--warn)" }}>
+              <button className="button button-danger" type="submit">
                 Delete template
               </button>
             </form>

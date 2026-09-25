@@ -55,7 +55,7 @@ export default async function RedirectsPage({
               </p>
             </div>
             <form method="post" action={`/api/sites/${site.id}/redirects/${redirect.id}/delete`}>
-              <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px" }}>
+              <button className="button button-danger" type="submit" style={{ fontSize: 12.5, padding: "6px 10px" }}>
                 Delete
               </button>
             </form>

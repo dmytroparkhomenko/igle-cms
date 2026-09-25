@@ -5,12 +5,26 @@ import { NewTaskButton } from "./NewTaskButton";
 
 export const dynamic = "force-dynamic";
 
-const priorityColor: Record<string, string> = {
-  urgent: "var(--warn)",
+const priorityChipClass: Record<string, string> = {
+  urgent: "chip-urgent",
+  high: "chip-high",
+  medium: "chip-medium",
+  low: "chip-low"
+};
+
+const priorityBarColor: Record<string, string> = {
+  urgent: "var(--danger)",
   high: "var(--warn)",
   medium: "var(--accent)",
-  low: "var(--muted)"
+  low: "var(--line-strong)"
 };
+
+function initials(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  const parts = trimmed.split(/\s+/);
+  return parts.length === 1 ? parts[0]!.slice(0, 2).toUpperCase() : `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+}
 
 const statusLabel: Record<string, string> = {
   open: "Open",
@@ -68,19 +82,21 @@ export default async function TasksPage({
           <p className="muted">{openTasks.length} open.</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Link href={listHref} className="button" style={boardView ? { background: "none", color: "var(--muted)" } : undefined}>
-            List
-          </Link>
-          <Link href={boardHref} className="button" style={boardView ? undefined : { background: "none", color: "var(--muted)" }}>
-            Board
-          </Link>
+          <div className="segmented">
+            <Link href={listHref} className={boardView ? undefined : "active"}>
+              List
+            </Link>
+            <Link href={boardHref} className={boardView ? "active" : undefined}>
+              Board
+            </Link>
+          </div>
           {isAdmin ? (
-            <Link href="/tasks/dashboard" className="button" style={{ background: "none", color: "var(--accent)" }}>
+            <Link href="/tasks/dashboard" className="button button-ghost">
               Dashboard
             </Link>
           ) : null}
           {isAdmin ? (
-            <Link href="/tasks/archive" className="button" style={{ background: "none", color: "var(--muted)", fontSize: 12.5 }}>
+            <Link href="/tasks/archive" className="button button-ghost" style={{ fontSize: 12.5 }}>
               Archive
             </Link>
           ) : null}
@@ -134,17 +150,23 @@ export default async function TasksPage({
                 {columnTasks.map((task) => {
                   const assignee = task.assigneeId ? membersById.get(task.assigneeId) : undefined;
                   return (
-                    <Link className="card" href={`/tasks/${task.id}`} key={task.id} style={{ display: "block", marginBottom: 10 }}>
-                      <strong style={{ display: "block", marginBottom: 4 }}>{task.title}</strong>
-                      <p className="muted" style={{ margin: "0 0 6px", fontSize: 12.5 }}>
-                        {task.deadline ? `Due ${task.deadline}` : ""}
+                    <Link className="card card-link" href={`/tasks/${task.id}`} key={task.id} style={{ display: "block", marginBottom: 10 }}>
+                      <strong style={{ display: "block", marginBottom: 4, fontSize: 13.5 }}>{task.title}</strong>
+                      <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>
+                        {task.deadline ? `Due ${task.deadline}` : "No deadline"}
                       </p>
-                      <span className="status" style={{ color: priorityColor[task.priority], borderColor: priorityColor[task.priority], fontSize: 11 }}>
-                        {task.priority}
-                      </span>{" "}
-                      <span className="status" style={{ fontSize: 11, color: assignee ? "var(--text)" : "var(--muted)" }}>
-                        {assignee ? assignee.name || assignee.email : "Unassigned"}
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span className={`chip ${priorityChipClass[task.priority]}`}>{task.priority}</span>
+                        {assignee ? (
+                          <span className="avatar" title={assignee.name || assignee.email}>
+                            {initials(assignee.name || assignee.email)}
+                          </span>
+                        ) : (
+                          <span className="muted" style={{ fontSize: 11 }}>
+                            Unassigned
+                          </span>
+                        )}
+                      </div>
                     </Link>
                   );
                 })}
@@ -161,6 +183,7 @@ export default async function TasksPage({
               const assignee = task.assigneeId ? membersById.get(task.assigneeId) : undefined;
               return (
                 <Link className="list-row" href={`/tasks/${task.id}`} key={task.id}>
+                  <span className="priority-bar" style={{ background: priorityBarColor[task.priority] }} aria-hidden="true" />
                   <div className="main">
                     <h3>{task.title}</h3>
                     <p className="muted">
@@ -169,13 +192,17 @@ export default async function TasksPage({
                         .join(" · ")}
                     </p>
                   </div>
-                  <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
-                    {assignee ? assignee.name || assignee.email : "Unassigned"}
-                  </span>
-                  <span className="status" style={{ color: priorityColor[task.priority], borderColor: priorityColor[task.priority] }}>
-                    {task.priority}
-                  </span>
+                  <span className={`chip ${priorityChipClass[task.priority]}`}>{task.priority}</span>
                   <span className="status">{statusLabel[task.status]}</span>
+                  {assignee ? (
+                    <span className="avatar" title={assignee.name || assignee.email}>
+                      {initials(assignee.name || assignee.email)}
+                    </span>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      Unassigned
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -203,10 +230,16 @@ export default async function TasksPage({
                           {task.siteId && sitesById.has(task.siteId) ? sitesById.get(task.siteId) : ""}
                         </p>
                       </div>
-                      <span className="status" style={{ color: assignee ? "var(--text)" : "var(--muted)" }}>
-                        {assignee ? assignee.name || assignee.email : "Unassigned"}
-                      </span>
-                      <span className="status">{statusLabel[task.status]}</span>
+                      <span className={`chip ${task.status === "done" ? "chip-done" : "chip-low"}`}>{statusLabel[task.status]}</span>
+                      {assignee ? (
+                        <span className="avatar" title={assignee.name || assignee.email}>
+                          {initials(assignee.name || assignee.email)}
+                        </span>
+                      ) : (
+                        <span className="muted" style={{ fontSize: 12 }}>
+                          Unassigned
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

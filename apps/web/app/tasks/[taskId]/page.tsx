@@ -211,7 +211,7 @@ export default async function TaskDetailPage({
               </form>
               {isOwner ? (
                 <form method="post" action={`/api/tasks/${task.id}/checklist/${item.id}/remove`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12 }}>
+                  <button className="button button-danger" type="submit" style={{ fontSize: 12 }}>
                     Remove
                   </button>
                 </form>
@@ -255,7 +255,7 @@ export default async function TaskDetailPage({
               </div>
               {isOwner ? (
                 <form method="post" action={`/api/tasks/${task.id}/attachments/${attachment.id}/remove`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                  <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                     Remove
                   </button>
                 </form>

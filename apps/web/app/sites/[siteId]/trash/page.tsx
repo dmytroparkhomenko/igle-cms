@@ -64,7 +64,7 @@ export default async function TrashPage({
               </button>
             </form>
             <details>
-              <summary className="button" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px", display: "inline-block", cursor: "pointer" }}>
+              <summary className="button button-danger" style={{ fontSize: 12.5, padding: "6px 10px", display: "inline-block", cursor: "pointer" }}>
                 Delete permanently
               </summary>
               <form

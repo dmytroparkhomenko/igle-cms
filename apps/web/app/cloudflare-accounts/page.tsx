@@ -121,7 +121,7 @@ export default async function CloudflareAccountsPage({
               </form>
               {account.domainCount === 0 ? (
                 <form method="post" action={`/api/cloudflare-accounts/${account.id}/delete`}>
-                  <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5 }}>
+                  <button className="button button-danger" type="submit" style={{ fontSize: 12.5 }}>
                     Remove
                   </button>
                 </form>

@@ -46,8 +46,8 @@ export function NewTaskButton({ members, sites, actorId }: { members: Member[]; 
               <h2 style={{ margin: 0 }}>New task</h2>
               <button
                 type="button"
-                className="button"
-                style={{ background: "none", color: "var(--muted)", padding: "4px 8px" }}
+                className="button button-ghost"
+                style={{ padding: "4px 8px" }}
                 onClick={() => setOpen(false)}
                 aria-label="Close"
               >

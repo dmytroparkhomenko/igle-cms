@@ -15,7 +15,7 @@ export function PageRow({ siteId, page }: { siteId: string; page: PageIndexRecor
         </button>
       </form>
       <form method="post" action={`/api/sites/${siteId}/pages/${page.id}/delete`}>
-        <button className="button" type="submit" style={{ background: "none", color: "var(--warn)", fontSize: 12.5, padding: "6px 10px" }}>
+        <button className="button button-danger" type="submit" style={{ fontSize: 12.5, padding: "6px 10px" }}>
           Delete
         </button>
       </form>
