@@ -109,6 +109,8 @@ export interface CoreState {
   affiliateLinks?: Record<string, string> | undefined;
   /** ISO timestamp of the last weekly task-archive sweep (see TaskService.runWeeklyArchiveSweepIfDue) — lets the worker tell it's already run today without a second store. */
   taskArchiveSweepAt?: string | undefined;
+  /** Last UTC date (YYYY-MM-DD) the deadline-reminder sweep ran — see TaskService.checkDeadlineRemindersIfDue. */
+  taskDeadlineCheckAt?: string | undefined;
   /** One shared bot token for task-assignment Telegram notifications — see TelegramSettingsService/TelegramNotifier. Admin-set on /integrations. */
   telegramBotToken?: string | undefined;
 }
@@ -346,11 +348,20 @@ export interface TaskRecord {
   activity: TaskActivityEntry[];
   /** Soft-archive, admin only — never hard-deleted, matching PageIndexRecord's trash/restore pattern. */
   archivedAt?: string | undefined;
+  /** Set once a "due tomorrow" reminder has fired for the current `deadline` — cleared when the deadline changes, so a rescheduled task can remind again. */
+  deadlineDueSoonNotifiedAt?: string | undefined;
+  /** Set once an "overdue" reminder has fired for the current `deadline` — same reset-on-reschedule rule as above. One-shot, not a daily repeat. */
+  deadlineOverdueNotifiedAt?: string | undefined;
   createdAt: string;
   updatedAt: string;
 }
 
-export type NotificationKind = "task-assigned" | "task-comment" | "task-status-changed";
+export type NotificationKind =
+  | "task-assigned"
+  | "task-comment"
+  | "task-status-changed"
+  | "task-deadline-due-soon"
+  | "task-deadline-overdue";
 
 export interface NotificationRecord {
   id: string;

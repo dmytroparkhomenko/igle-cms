@@ -171,6 +171,9 @@ export class TaskService {
         if (nextDeadline !== task.deadline) {
           pushActivity(task, { action: "deadline-changed", actorId: actor.id, actorLabel: label, from: task.deadline ?? "none", to: nextDeadline ?? "none" });
           task.deadline = nextDeadline;
+          // A rescheduled deadline should be able to remind again.
+          task.deadlineDueSoonNotifiedAt = undefined;
+          task.deadlineOverdueNotifiedAt = undefined;
         }
       }
       if (input.assigneeId !== undefined) {
@@ -317,6 +320,56 @@ export class TaskService {
     if (!due) return { ran: false, archivedTaskIds: [] };
     const { archivedTaskIds } = await this.archiveCompletedAndCancelled();
     return { ran: true, archivedTaskIds };
+  }
+
+  /**
+   * Called periodically by the worker, at most once per UTC calendar day (tracked via
+   * `taskDeadlineCheckAt`, same pattern as the weekly archive sweep). Pings the assignee and
+   * creator once when a task becomes due tomorrow, and once when it becomes overdue — deliberately
+   * one-shot per deadline rather than a daily repeat, to avoid nagging; rescheduling the deadline
+   * (see `update()`) clears both flags so it can remind again. Archived/done/cancelled tasks and
+   * tasks with no deadline or no recipient are skipped.
+   */
+  async checkDeadlineRemindersIfDue(now: Date = new Date()): Promise<{ ran: boolean }> {
+    const todayKey = now.toISOString().slice(0, 10);
+    let due = false;
+    await this.stateStore.update((state) => {
+      if (state.taskDeadlineCheckAt?.slice(0, 10) === todayKey) return;
+      due = true;
+      state.taskDeadlineCheckAt = now.toISOString();
+    });
+    if (!due) return { ran: false };
+
+    const tomorrow = new Date(now);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+
+    const pings: TaskPing[] = [];
+    await this.stateStore.update((state) => {
+      for (const task of state.tasks) {
+        if (task.archivedAt || task.status === "done" || task.status === "cancelled" || !task.deadline) continue;
+        const recipients = new Set([task.assigneeId, task.creatorId].filter((userId): userId is string => Boolean(userId)));
+        if (recipients.size === 0) continue;
+
+        if (task.deadline === tomorrowKey && !task.deadlineDueSoonNotifiedAt) {
+          task.deadlineDueSoonNotifiedAt = now.toISOString();
+          const message = `"${task.title}" is due tomorrow (${task.deadline})`;
+          for (const userId of recipients) {
+            state.notifications.push(buildNotification({ userId, kind: "task-deadline-due-soon", taskId: task.id, message }));
+            pings.push({ userId, taskId: task.id, message });
+          }
+        } else if (task.deadline < todayKey && !task.deadlineOverdueNotifiedAt) {
+          task.deadlineOverdueNotifiedAt = now.toISOString();
+          const message = `"${task.title}" is overdue (was due ${task.deadline})`;
+          for (const userId of recipients) {
+            state.notifications.push(buildNotification({ userId, kind: "task-deadline-overdue", taskId: task.id, message }));
+            pings.push({ userId, taskId: task.id, message });
+          }
+        }
+      }
+    });
+    void this.pingDelivery?.deliver(pings).catch(() => undefined);
+    return { ran: true };
   }
 
   async addChecklistItem(taskId: string, actor: Actor, text: string): Promise<TaskRecord> {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import pino from "pino";
-import { ImportService, JsonStateStore, RemoteSiteImportService, RevisionService, SiteService, TaskService } from "@igle/core";
+import { ImportService, JsonStateStore, RemoteSiteImportService, RevisionService, SiteService, TaskService, TelegramNotifier } from "@igle/core";
 
 const logger = pino({ name: "igle-worker" });
 
@@ -13,7 +13,8 @@ logger.info(
 
 const dataDir = process.env.IGLE_DATA_DIR ?? path.resolve(process.cwd(), "../../data");
 const stateStore = new JsonStateStore(dataDir);
-const taskService = new TaskService(dataDir, stateStore);
+const telegramNotifier = new TelegramNotifier(stateStore, process.env.WEB_ORIGIN ?? "http://localhost:3000");
+const taskService = new TaskService(dataDir, stateStore, telegramNotifier);
 const revisionService = new RevisionService(stateStore);
 const siteService = new SiteService(dataDir, stateStore, revisionService);
 const importService = new ImportService(stateStore, revisionService);
@@ -38,6 +39,26 @@ void checkWeeklyTaskArchiveSweep();
 setInterval(() => {
   void checkWeeklyTaskArchiveSweep();
 }, ARCHIVE_SWEEP_CHECK_INTERVAL_MS);
+
+// Same "once per day, but check hourly so a restart doesn't miss the window" shape as the weekly
+// archive sweep — checkDeadlineRemindersIfDue self-gates to once per UTC calendar day.
+const DEADLINE_REMINDER_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+async function checkTaskDeadlineReminders(): Promise<void> {
+  try {
+    const result = await taskService.checkDeadlineRemindersIfDue();
+    if (result.ran) {
+      logger.info("Task deadline reminder sweep ran.");
+    }
+  } catch (error) {
+    logger.error({ error }, "Task deadline reminder sweep failed.");
+  }
+}
+
+void checkTaskDeadlineReminders();
+setInterval(() => {
+  void checkTaskDeadlineReminders();
+}, DEADLINE_REMINDER_CHECK_INTERVAL_MS);
 
 // Short interval so "connect a server → its sites show up automatically" actually feels
 // immediate — a full import can still take a while per server, but this makes sure it starts
