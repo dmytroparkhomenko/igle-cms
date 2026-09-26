@@ -73,11 +73,6 @@ export default async function SitesPage({
           <h1>Sites</h1>
           <p className="muted">{sites.length} site{sites.length === 1 ? "" : "s"}</p>
         </div>
-        {actor.role === "administrator" ? (
-          <Link href="/sites/duplicates" className="button button-ghost">
-            Review duplicates
-          </Link>
-        ) : null}
       </div>
       {imported ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
