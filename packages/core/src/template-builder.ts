@@ -74,8 +74,22 @@ const externalHrefPattern = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
  * mailto, tel, data, javascript, #fragment) untouched. Any depth of nesting is handled uniformly
  * by resolving through the source file's actual directory — the flat single-directory convention
  * this CMS's templates render into doesn't have to match the uploaded zip's original layout.
+ *
+ * `realAssetPaths`, when given, is every non-HTML file's own path relative to the zip root —
+ * used to correct a mismatch confirmed live in an uploaded template: two images whose `src`
+ * carried a redundant leading "assets/" segment (left over from how the source site's own build
+ * tooling served files) that didn't match where the file actually sat in the zip, so the naively
+ * rewritten URL pointed at nothing. When the literal resolved path isn't real but stripping one
+ * leading "assets/" lands on a file that is, that corrected path is used instead; otherwise this
+ * falls through unchanged, since guessing wrong is worse than today's already-mostly-correct
+ * behavior.
  */
-export function rewriteReference(hrefValue: string, originPath: string, pagesByMatchKey: Map<string, DiscoveredPage>): RewriteResult {
+export function rewriteReference(
+  hrefValue: string,
+  originPath: string,
+  pagesByMatchKey: Map<string, DiscoveredPage>,
+  realAssetPaths?: Set<string>
+): RewriteResult {
   if (externalHrefPattern.test(hrefValue) || hrefValue.startsWith("#")) {
     return { value: hrefValue, kind: "external" };
   }
@@ -97,6 +111,11 @@ export function rewriteReference(hrefValue: string, originPath: string, pagesByM
     return { value: `${page.route}${suffix}`, kind: "page" };
   }
 
+  if (realAssetPaths && !realAssetPaths.has(resolved) && resolved.startsWith("assets/")) {
+    const withoutRedundantPrefix = resolved.slice("assets/".length);
+    if (realAssetPaths.has(withoutRedundantPrefix)) resolved = withoutRedundantPrefix;
+  }
+
   return { value: `/assets/${resolved}${suffix}`, kind: "asset", assetOriginPath: resolved };
 }
 
@@ -107,19 +126,42 @@ function splitOffQueryOrHash(value: string): [string, string] {
 }
 
 const hrefSrcAttrPattern = /(\s(?:href|src)=")([^"]*)(")/gi;
+// srcset (on <source> and responsive <img srcset>) is a different shape entirely — one or more
+// comma-separated "url [descriptor]" entries, e.g. `a.webp 640w, b.webp 1280w` or, as seen in a
+// real uploaded template's <picture> markup, a single bare url with no descriptor at all. Handled
+// separately so a multi-entry value doesn't get mangled by treating the whole attribute as one URL.
+const srcsetAttrPattern = /(\ssrcset=")([^"]*)(")/gi;
 
-/** Rewrites every href/src attribute in an HTML document, collecting non-page targets to copy as assets. */
+/** Rewrites every href/src/srcset attribute in an HTML document, collecting non-page targets to copy as assets. */
 export function rewritePageReferences(
   html: string,
   originPath: string,
   pagesByMatchKey: Map<string, DiscoveredPage>,
-  assetOriginPaths: Set<string>
+  assetOriginPaths: Set<string>,
+  realAssetPaths?: Set<string>
 ): string {
-  return html.replace(hrefSrcAttrPattern, (full, prefix: string, value: string, suffix: string) => {
-    const result = rewriteReference(value, originPath, pagesByMatchKey);
+  let out = html.replace(hrefSrcAttrPattern, (full, prefix: string, value: string, suffix: string) => {
+    const result = rewriteReference(value, originPath, pagesByMatchKey, realAssetPaths);
     if (result.kind === "asset" && result.assetOriginPath) assetOriginPaths.add(result.assetOriginPath);
     return `${prefix}${result.value}${suffix}`;
   });
+  out = out.replace(srcsetAttrPattern, (full, prefix: string, value: string, suffix: string) => {
+    const rewritten = value
+      .split(",")
+      .map((entry) => {
+        const trimmed = entry.trim();
+        if (!trimmed) return trimmed;
+        const spaceIndex = trimmed.search(/\s/);
+        const url = spaceIndex === -1 ? trimmed : trimmed.slice(0, spaceIndex);
+        const descriptor = spaceIndex === -1 ? "" : trimmed.slice(spaceIndex);
+        const result = rewriteReference(url, originPath, pagesByMatchKey, realAssetPaths);
+        if (result.kind === "asset" && result.assetOriginPath) assetOriginPaths.add(result.assetOriginPath);
+        return `${result.value}${descriptor}`;
+      })
+      .join(", ");
+    return `${prefix}${rewritten}${suffix}`;
+  });
+  return out;
 }
 
 export interface ExtractedSeo {

@@ -23,6 +23,7 @@ export * from "./state-store.js";
 export * from "./task-service.js";
 export * from "./telegram-notifier.js";
 export * from "./telegram-settings-service.js";
+export * from "./template-builder.js";
 export * from "./template-service.js";
 export * from "./types.js";
 export * from "./verification-service.js";

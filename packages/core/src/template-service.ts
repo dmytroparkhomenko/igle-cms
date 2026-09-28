@@ -292,6 +292,8 @@ export class TemplateService {
       if (htmlFiles.length === 0) {
         throw new IgleError("TEMPLATE_EMPTY", "No .html files were found in the uploaded archive.", 400);
       }
+      const nonHtmlFiles = allFiles.filter((filePath) => !/\.html?$/i.test(filePath));
+      const realAssetPaths = new Set(nonHtmlFiles);
 
       const pages = discoverPages(htmlFiles);
       const pagesByMatchKey = new Map<string, DiscoveredPage>(pages.map((page) => [page.matchKey, page]));
@@ -303,7 +305,7 @@ export class TemplateService {
       const pageTypes: TemplatePageType[] = [];
       for (const page of pages) {
         let html = await fs.readFile(path.join(sourceRoot, page.originPath), "utf8");
-        html = rewritePageReferences(html, page.originPath, pagesByMatchKey, assetOriginPaths);
+        html = rewritePageReferences(html, page.originPath, pagesByMatchKey, assetOriginPaths, realAssetPaths);
         if (input.sourceDomain) html = stripSourceDomain(html, input.sourceDomain);
         const { html: templatizedHtml, seo } = templatizeSeo(html);
         html = templatizedHtml;
@@ -330,7 +332,6 @@ export class TemplateService {
       // Every non-HTML file is copied verbatim under assets/, preserving its original relative
       // location — that keeps files' own internal relative references (e.g. a CSS file's
       // url(../fonts/x.woff)) working without needing to parse and rewrite non-HTML formats too.
-      const nonHtmlFiles = allFiles.filter((filePath) => !/\.html?$/i.test(filePath));
       let assetsFound = 0;
       for (const filePath of nonHtmlFiles) {
         const destination = path.join(targetDir, "assets", filePath);
