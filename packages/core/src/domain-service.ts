@@ -172,9 +172,15 @@ export class DomainService {
     const site = await this.siteService.get(siteId, actor);
     if (!site) throw new IgleError("SITE_NOT_FOUND", "Site was not found.", 404);
 
+    // connect() always creates a proxied A record with SSL mode at least "full", so the site is
+    // genuinely served over https at the Cloudflare edge from the moment it's assigned — even
+    // before issueOriginSsl() gets around to a real origin cert. Without this, nothing else in the
+    // app ever flips site.metadata.https on: canonical/sitemap/hreflang URLs kept generating as
+    // http://, and DeployService skips both its own origin-SSL step and the https smoke test,
+    // entirely silently. Confirmed live as a real gap, not just a theoretical one.
     await this.siteService.updateSettings(
       site,
-      { domain: domain.domain, deploymentTarget: "aapanel", serverId: domain.serverId },
+      { domain: domain.domain, deploymentTarget: "aapanel", serverId: domain.serverId, https: true },
       actor
     );
 

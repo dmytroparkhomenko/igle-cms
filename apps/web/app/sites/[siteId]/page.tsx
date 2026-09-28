@@ -122,12 +122,20 @@ export default async function SiteDetailPage({
     site.metadata.deploymentTarget === "aapanel"
       ? site.metadata.domain
       : undefined;
+  // Every domain must go through Cloudflare (no direct-to-server DNS — that's what leaks the
+  // origin IP). This is the site's Cloudflare-managed domain, if it has one; site.metadata.domain
+  // set any other way (e.g. a pre-existing site from before this rule) shows as a warning instead.
+  const cloudflareDomain = state.domains.find((item) => item.siteId === site.id);
+  // A Cloudflare-proxied domain's public DNS resolves to Cloudflare's own edge IPs by design, not
+  // this server's — comparing the two would show a permanent false "DNS mismatch" for every site
+  // set up the intended way. Only run the direct-IP check for a domain that isn't Cloudflare-managed,
+  // where it's still the right question to ask (see the render logic below for what shows instead).
   const [aapanelDns, aapanelSiteLookup] =
     assignedServerId && aapanelDomain
       ? await Promise.all([
-          runtime.deployService
-            .checkAaPanelDns(assignedServerId, actor, aapanelDomain, isPbnSite)
-            .catch(() => null),
+          cloudflareDomain
+            ? Promise.resolve(null)
+            : runtime.deployService.checkAaPanelDns(assignedServerId, actor, aapanelDomain, isPbnSite).catch(() => null),
           runtime.deployService
             .findExistingAaPanelSite(assignedServerId, actor, aapanelDomain, isPbnSite)
             .then((site_) => ({ ok: true as const, site: site_ }))
@@ -137,10 +145,6 @@ export default async function SiteDetailPage({
             })),
         ])
       : [null, null];
-  // Every domain must go through Cloudflare (no direct-to-server DNS — that's what leaks the
-  // origin IP). This is the site's Cloudflare-managed domain, if it has one; site.metadata.domain
-  // set any other way (e.g. a pre-existing site from before this rule) shows as a warning instead.
-  const cloudflareDomain = state.domains.find((item) => item.siteId === site.id);
 
   const currentRobotsTxt = await fs
     .readFile(path.join(site.repoPath, "robots.txt"), "utf8")
@@ -529,7 +533,22 @@ export default async function SiteDetailPage({
                 HTTPS&quot; is on. Set the domain above before deploying.
               </p>
             ) : null}
-            {aapanelDomain && aapanelDns ? (
+            {aapanelDomain && cloudflareDomain ? (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11.5,
+                  color: cloudflareDomain.status === "ssl_active" || cloudflareDomain.zoneActive ? "var(--accent)" : "var(--warn)",
+                }}
+              >
+                Proxied through Cloudflare — {(domainStatusLabel[cloudflareDomain.status] ?? cloudflareDomain.status).toLowerCase()}. A direct
+                DNS-to-server check doesn&apos;t apply to a proxied domain (it&apos;ll always resolve to Cloudflare's own IPs); see{" "}
+                <Link href="/domains" style={{ color: "inherit" }}>
+                  Domains
+                </Link>{" "}
+                for the real status.
+              </p>
+            ) : aapanelDomain && aapanelDns ? (
               <p
                 style={{
                   margin: 0,
