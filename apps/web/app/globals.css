@@ -461,7 +461,9 @@ select:disabled {
   border-bottom: none;
 }
 
-a.list-row:hover {
+/* Not scoped to `a.list-row` — several rows (e.g. the pages list) are a plain div wrapping an
+   inner link plus action buttons, not an anchor themselves, and got no hover feedback at all. */
+.list-row:hover {
   background: var(--bg);
 }
 
