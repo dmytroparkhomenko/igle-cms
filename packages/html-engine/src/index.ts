@@ -492,8 +492,10 @@ export function absolutizeRelativeReferences(
  */
 export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: string): { html: string; count: number } {
   const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  attachParents(document);
   const ms = new TextPatcher(html);
   let count = 0;
+  const swappedImgPictures = new Set<ElementNode>();
   for (const node of findElements(document, "img")) {
     if (attr(node, "src") !== oldSrc) continue;
     const range = attrValueRange(node, "src", html);
@@ -501,7 +503,9 @@ export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: 
     ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "src", newSrc));
     removeAttributeFromNode(ms, html, node, "srcset");
     count += 1;
+    if (node.parentNode?.tagName === "picture") swappedImgPictures.add(node.parentNode);
   }
+  const rewrittenSources = new Set<ElementNode>();
   for (const node of findElements(document, "source")) {
     const srcset = attr(node, "srcset");
     if (!srcset) continue;
@@ -510,7 +514,26 @@ export function replaceImageSrcEverywhere(html: string, oldSrc: string, newSrc: 
     const range = attrValueRange(node, "srcset", html);
     if (!range) continue;
     ms.overwrite(range.start, range.end, replaceAttributeValue(html.slice(range.start, range.end), "srcset", rewritten));
+    rewrittenSources.add(node);
     count += 1;
+  }
+  // A <picture>'s <source> always wins over its <img> fallback whenever its media query matches —
+  // so swapping the <img> above is invisible unless every sibling <source> ends up pointing at the
+  // new image too. The loop just above already handles a <source> whose srcset happened to
+  // string-match oldSrc; anything left over in a picture whose <img> was just swapped is dropped
+  // instead of guessed at, since there's no reliable way to know which new asset should represent
+  // each breakpoint. Confirmed live: a real page's <source srcset="assets/foo.webp"> (relative)
+  // never matched its sibling <img src="/slug/assets/foo.webp"> (absolute) being replaced, silently
+  // leaving the "replaced" image invisible at every viewport width the sources' media queries
+  // covered between them (here, literally all of them).
+  for (const picture of swappedImgPictures) {
+    for (const child of picture.childNodes ?? []) {
+      if (child.tagName !== "source" || rewrittenSources.has(child)) continue;
+      const loc = child.sourceCodeLocation;
+      if (!loc) continue;
+      ms.remove(loc.startOffset, loc.endOffset);
+      count += 1;
+    }
   }
   for (const node of findElements(document, "link")) {
     if ((attr(node, "rel") ?? "").toLowerCase() !== "preload") continue;
