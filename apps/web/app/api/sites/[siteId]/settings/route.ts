@@ -8,13 +8,17 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
   const accept = request.headers.get("accept") ?? "";
   const wantsRedirect = accept.includes("text/html");
   const { siteId } = await context.params;
+  // Hoisted so the catch block below can still read `returnTo` from it — the request body can
+  // only be consumed once, so re-reading it there (e.g. via request.clone()) isn't an option once
+  // formData() has already been awaited here.
+  let form: FormData | undefined;
 
   try {
     const actor = await requireActor();
     const site = await runtime.siteService.get(siteId, actor);
     if (!site) throw new IgleError("SITE_NOT_FOUND", "Site was not found.", 404);
 
-    const form = await request.formData();
+    form = await request.formData();
     const urlStyle = String(form.get("urlStyle") ?? "");
     const wwwMode = String(form.get("wwwMode") ?? "");
 
@@ -68,17 +72,26 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     await runtime.siteService.updateSettings(site, settings, actor);
 
     if (wantsRedirect) {
-      return NextResponse.redirect(new URL(`/sites/${site.id}?updated=1`, resolveRequestOrigin(request)), { status: 303 });
+      const destination = new URL(safeReturnTo(form.get("returnTo"), site.id), resolveRequestOrigin(request));
+      destination.searchParams.set("updated", "1");
+      return NextResponse.redirect(destination, { status: 303 });
     }
     return NextResponse.json({ ok: true });
   } catch (error) {
     const formatted = apiError(error);
     if (wantsRedirect) {
-      return NextResponse.redirect(
-        new URL(`/sites/${siteId}?settingsError=${encodeURIComponent(formatted.body.error.message)}`, resolveRequestOrigin(request)),
-        { status: 303 }
-      );
+      const destination = new URL(safeReturnTo(form?.get("returnTo"), siteId), resolveRequestOrigin(request));
+      destination.searchParams.set("settingsError", formatted.body.error.message);
+      return NextResponse.redirect(destination, { status: 303 });
     }
     return NextResponse.json(formatted.body, { status: formatted.status });
   }
+}
+
+/** Confines a form's optional `returnTo` to a same-site path under this site's own settings pages — never an absolute or protocol-relative URL — falling back to the main site page when absent or invalid. */
+function safeReturnTo(value: FormDataEntryValue | null | undefined, siteId: string): string {
+  const fallback = `/sites/${siteId}`;
+  if (typeof value !== "string") return fallback;
+  if (!value.startsWith(`/sites/${siteId}`) || value.startsWith("//")) return fallback;
+  return value;
 }

@@ -355,6 +355,7 @@ export default async function SiteDetailPage({
             <Link href={`/sites/${site.id}/redirects`}>Redirects</Link>
             <Link href={`/sites/${site.id}/scripts`}>Scripts</Link>
             <Link href={`/sites/${site.id}/header-footer`}>Header/Footer</Link>
+            <Link href={`/sites/${site.id}/domain-gluing`}>Domain gluing</Link>
           </div>
         </div>
 
@@ -559,40 +560,6 @@ export default async function SiteDetailPage({
                     : "No matching site in aaPanel yet — the first deploy will create one."}
               </p>
             ) : null}
-          </div>
-
-          <div className="settings-section">
-            <p className="settings-section-title">Domain gluing</p>
-            <p className="muted" style={{ margin: "0 0 10px", fontSize: 11.5 }}>
-              For consolidating an aged/dropped domain into a newly-registered replacement.
-              Every page without its own explicit canonical (set on that page's SEO fields) gets
-              this target at build time instead of a self-referencing one.
-            </p>
-            <div className="field">
-              <label htmlFor="canonicalDomain">Canonical target domain</label>
-              <input
-                type="text"
-                id="canonicalDomain"
-                name="canonicalDomain"
-                defaultValue={site.metadata.canonicalDomain ?? ""}
-                placeholder="https://newreg.example"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="hreflangTargets">Hreflang alternates</label>
-              <textarea
-                id="hreflangTargets"
-                name="hreflangTargets"
-                rows={4}
-                style={textareaStyle}
-                defaultValue={site.metadata.hreflangTargets.map((target) => `${target.lang} ${target.domain}`).join("\n")}
-                placeholder={"One per line: lang domain\nes-MX https://es.example.com\nx-default https://example.com"}
-              />
-              <p className="muted" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
-                Overrides the automatic mirror-partner hreflang below when set. Leave empty to
-                keep the automatic behavior.
-              </p>
-            </div>
           </div>
 
           {actorIsAdmin ? (
