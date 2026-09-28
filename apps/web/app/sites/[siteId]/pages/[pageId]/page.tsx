@@ -70,10 +70,13 @@ export default async function PageEditor({
       ) : null}
 
       <article className="card" style={{ marginBottom: 20, maxWidth: 560 }}>
-        <p className="muted" style={{ margin: "0 0 4px", fontSize: 12 }}>
+        <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>
           Search result preview
         </p>
-        <div style={{ fontFamily: "arial, sans-serif" }}>
+        {/* Deliberately a fixed white surface regardless of app theme — this mimics Google's own
+            (always-light) result styling, so the colors below need a matching light background to
+            stay readable rather than partially adapting to dark mode. */}
+        <div style={{ background: "#fff", borderRadius: 8, padding: "12px 14px", fontFamily: "arial, sans-serif" }}>
           <div style={{ color: "#1a0dab", fontSize: 18, lineHeight: 1.3 }}>{page.seoTitle || page.internalName}</div>
           <div style={{ color: "#006621", fontSize: 13 }}>{displayUrl}</div>
           <div style={{ color: "#545454", fontSize: 13 }}>{page.metaDescription || "No description set."}</div>
