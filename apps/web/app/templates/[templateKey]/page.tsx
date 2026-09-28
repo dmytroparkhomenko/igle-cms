@@ -8,10 +8,10 @@ export default async function TemplateDetailPage({
   searchParams
 }: {
   params: Promise<{ templateKey: string }>;
-  searchParams: Promise<{ error?: string; uploaded?: string }>;
+  searchParams: Promise<{ error?: string; uploaded?: string; updated?: string }>;
 }) {
   const { templateKey } = await params;
-  const { error, uploaded } = await searchParams;
+  const { error, uploaded, updated } = await searchParams;
 
   const templates = await runtime.templateService.list();
   const template = templates.find((item) => item.key === templateKey);
@@ -50,6 +50,11 @@ export default async function TemplateDetailPage({
           Template uploaded and converted. Review the preview below, then launch a site from it.
         </article>
       ) : null}
+      {updated ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
+          Template updated. Sites already launched from it are untouched — only new launches use the new files.
+        </article>
+      ) : null}
       {error ? (
         <article className="card" style={{ borderColor: "var(--warn)", marginBottom: 16 }}>
           {error}
@@ -85,6 +90,57 @@ export default async function TemplateDetailPage({
           </button>
         </form>
       </div>
+
+      {template.source === "custom" ? (
+        <details className="card" style={{ marginTop: 20, maxWidth: 560 }}>
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>Update this template&apos;s files</summary>
+          <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>
+            Upload a new .zip to replace this template&apos;s pages and assets in place — the link/key everything
+            points to stays the same. Sites already launched from this template are untouched; each copied its own
+            files at launch time and has no ongoing connection to the template.
+          </p>
+          <form
+            method="post"
+            action={`/api/templates/${template.key}/update`}
+            encType="multipart/form-data"
+            style={{ display: "grid", gap: 10, marginTop: 10 }}
+          >
+            <div className="field">
+              <label htmlFor="update-name">Template name</label>
+              <input type="text" id="update-name" name="name" required defaultValue={template.name} />
+            </div>
+            <div className="field">
+              <label htmlFor="update-description">Description (optional)</label>
+              <textarea id="update-description" name="description" rows={2} style={textareaStyle} defaultValue={template.description ?? ""} />
+            </div>
+            <div className="field">
+              <label htmlFor="update-sourceDomain">Source domain (optional)</label>
+              <input type="text" id="update-sourceDomain" name="sourceDomain" placeholder="example.com" />
+            </div>
+            <div className="field">
+              <label htmlFor="update-brandName">Brand/product name to parameterize (optional)</label>
+              <input type="text" id="update-brandName" name="brandName" placeholder="e.g. the product or company name used throughout the site" />
+            </div>
+            <div className="field">
+              <label htmlFor="update-file">New site .zip file</label>
+              <input type="file" id="update-file" name="file" accept=".zip" required />
+            </div>
+            <button className="button" type="submit" style={{ justifySelf: "start", marginTop: 4 }}>
+              Replace template files
+            </button>
+          </form>
+        </details>
+      ) : null}
     </>
   );
 }
+
+const textareaStyle = {
+  border: "1px solid var(--line)",
+  borderRadius: 6,
+  padding: "8px 10px",
+  font: "inherit",
+  color: "var(--text)",
+  background: "var(--panel)",
+  resize: "vertical" as const
+};

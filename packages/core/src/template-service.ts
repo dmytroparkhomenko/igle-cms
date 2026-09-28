@@ -281,6 +281,42 @@ export class TemplateService {
     if (!name) throw new IgleError("VALIDATION_ERROR", "Template name is required.", 400);
 
     const key = await this.uniqueTemplateKey(slugifyTemplateKey(name));
+    const targetDir = path.join(this.customTemplatesDir, key);
+    const report = await this.writeTemplateFromZip(input, key, targetDir);
+    return { key, report };
+  }
+
+  /**
+   * Replaces an existing custom template's pages and assets in place from a new .zip, keeping the
+   * same key — and therefore every existing link/reference to it — instead of creating a second
+   * copy. Deliberately has no effect on any site already created from this template: createSite()
+   * copies a template's files into the new site's own repo once, at creation time, with nothing
+   * linking back afterward (see its own comment) — so replacing the template's stored files here
+   * never touches a site that was built from an earlier version of it.
+   */
+  async updateTemplate(templateKey: string, input: UploadTemplateInput, actor: Actor): Promise<{ key: string; report: UploadTemplateReport }> {
+    assertCan(actor, "templates.manage");
+    const { source } = await this.resolveTemplateDir(templateKey);
+    if (source !== "custom") {
+      throw new IgleError("TEMPLATE_NOT_EDITABLE", "Only uploaded templates can be updated — built-in ones can't.", 400);
+    }
+    const name = input.name.trim();
+    if (!name) throw new IgleError("VALIDATION_ERROR", "Template name is required.", 400);
+
+    const targetDir = path.join(this.customTemplatesDir, templateKey);
+    // Wiped and rebuilt from scratch rather than merged — a page or asset removed from the new
+    // zip shouldn't linger as a stale leftover from the previous version.
+    await fs.rm(targetDir, { recursive: true, force: true });
+    const report = await this.writeTemplateFromZip(input, templateKey, targetDir);
+    return { key: templateKey, report };
+  }
+
+  /**
+   * Shared by uploadTemplate (new key, fresh directory) and updateTemplate (existing key, wiped
+   * directory) — everything from here down is agnostic to which one called it.
+   */
+  private async writeTemplateFromZip(input: UploadTemplateInput, key: string, targetDir: string): Promise<UploadTemplateReport> {
+    const name = input.name.trim();
     const stagingDir = path.join(this.dataDir, "tmp", `template-upload-${id("tpl")}`);
     await fs.mkdir(stagingDir, { recursive: true });
 
@@ -299,7 +335,6 @@ export class TemplateService {
       const pagesByMatchKey = new Map<string, DiscoveredPage>(pages.map((page) => [page.matchKey, page]));
       const assetOriginPaths = new Set<string>();
 
-      const targetDir = path.join(this.customTemplatesDir, key);
       await fs.mkdir(path.join(targetDir, "pages"), { recursive: true });
 
       const pageTypes: TemplatePageType[] = [];
@@ -352,12 +387,9 @@ export class TemplateService {
 
       return {
         key,
-        report: {
-          key,
-          pagesFound: pages.length,
-          assetsFound,
-          rejectedFiles: zipReport.rejectedFiles
-        }
+        pagesFound: pages.length,
+        assetsFound,
+        rejectedFiles: zipReport.rejectedFiles
       };
     } finally {
       await fs.rm(stagingDir, { recursive: true, force: true });
