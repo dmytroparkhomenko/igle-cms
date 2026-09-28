@@ -359,7 +359,6 @@ export default async function SiteDetailPage({
             <Link href={`/sites/${site.id}/redirects`}>Redirects</Link>
             <Link href={`/sites/${site.id}/scripts`}>Scripts</Link>
             <Link href={`/sites/${site.id}/header-footer`}>Header/Footer</Link>
-            <Link href={`/sites/${site.id}/domain-gluing`}>Domain gluing</Link>
           </div>
         </div>
 
@@ -581,23 +580,38 @@ export default async function SiteDetailPage({
             ) : null}
           </div>
 
-          {actorIsAdmin ? (
-            <div className="settings-section">
-              <p className="settings-section-title">Protection</p>
-              <input type="hidden" name="contentLockedFieldPresent" value="1" />
-              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                Platform: <strong>{platformLabel(site.metadata.platform)}</strong>
-                {site.metadata.platform !== "static" ? " — auto-detected on import." : ""}
+          <div className="settings-section">
+            <p className="settings-section-title">Canonical &amp; hreflang</p>
+            <div className="field">
+              <label htmlFor="canonicalDomain">Canonical target domain (optional)</label>
+              <input
+                type="text"
+                id="canonicalDomain"
+                name="canonicalDomain"
+                defaultValue={site.metadata.canonicalDomain ?? ""}
+                placeholder="https://newreg.example"
+              />
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
+                For consolidating an aged/dropped domain into a newly-registered replacement — every page without its
+                own explicit canonical (set on that page&apos;s SEO fields) gets this target at build time instead of
+                a self-referencing one. Leave empty for the normal case.
               </p>
-              <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                <input type="checkbox" name="contentLocked" defaultChecked={site.metadata.contentLocked} />
-                Locked — refuse all edits, imports, and deploys for this site
-              </label>
-              {site.metadata.contentLockReason ? (
-                <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>Reason: {site.metadata.contentLockReason}</p>
-              ) : null}
             </div>
-          ) : null}
+            <div className="field">
+              <label htmlFor="hreflangTargets">Hreflang alternates (optional)</label>
+              <textarea
+                id="hreflangTargets"
+                name="hreflangTargets"
+                rows={4}
+                style={textareaStyle}
+                defaultValue={site.metadata.hreflangTargets.map((target) => `${target.lang} ${target.domain}`).join("\n")}
+                placeholder={"One per line: lang domain\nes-MX https://es.example.com\nx-default https://example.com"}
+              />
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
+                Overrides the automatic mirror-partner hreflang when set. Leave empty to keep the automatic behavior.
+              </p>
+            </div>
+          </div>
 
           <button
             className="button"
@@ -1003,6 +1017,47 @@ export default async function SiteDetailPage({
             Load more revisions
           </Link>
         </p>
+      ) : null}
+
+      {actorIsAdmin ? (
+        <article className="card" style={{ marginBottom: 28, maxWidth: 480 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 15 }}>Protection</h2>
+            <details style={{ display: "inline-block" }}>
+              <summary
+                title="What is this?"
+                aria-label="What is this?"
+                style={{ cursor: "pointer", listStyle: "none", color: "var(--muted)", fontSize: 13 }}
+              >
+                ⓘ
+              </summary>
+              <p className="muted" style={{ fontSize: 11.5, margin: "6px 0 0", maxWidth: 400 }}>
+                Locking a site refuses every edit, import, and deploy for it — the safeguard that keeps a
+                WordPress/MODX (or other non-static) site Igle CMS only has a file snapshot of from getting
+                edited or deployed here and breaking the real, live install. It&apos;s set automatically on import
+                when one of those platforms is detected; toggle it yourself for any other site you want to freeze.
+              </p>
+            </details>
+          </div>
+          <form method="post" action={`/api/sites/${site.id}/settings`} style={{ display: "grid", gap: 10 }}>
+            <input type="hidden" name="contentLockedFieldPresent" value="1" />
+            {site.metadata.https ? <input type="hidden" name="https" value="on" /> : null}
+            <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+              Platform: <strong>{platformLabel(site.metadata.platform)}</strong>
+              {site.metadata.platform !== "static" ? " — auto-detected on import." : ""}
+            </p>
+            <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+              <input type="checkbox" name="contentLocked" defaultChecked={site.metadata.contentLocked} />
+              Locked — refuse all edits, imports, and deploys for this site
+            </label>
+            {site.metadata.contentLockReason ? (
+              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>Reason: {site.metadata.contentLockReason}</p>
+            ) : null}
+            <button className="button" type="submit" style={{ justifySelf: "start" }}>
+              Save
+            </button>
+          </form>
+        </article>
       ) : null}
 
       <details
