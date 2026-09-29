@@ -350,6 +350,61 @@ export function replaceElementByTag(html: string, tagName: string, newOuterHtml:
   return { html: ms.toString(), found: true };
 }
 
+const BULK_EDITABLE_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6", "p", "span", "a", "li", "button", "label", "figcaption", "blockquote", "td", "th", "dt", "dd"]);
+
+export interface EditableTextNode {
+  nodeId: number;
+  tagName: string;
+  /** Plain-text preview (trimmed, tags stripped) — for labeling a row, not for editing. */
+  preview: string;
+  /** The node's real innerHTML — this is what a bulk-edit field actually edits and saves, so any
+   * inline markup already inside it (a <strong>, a nested <a>) survives untouched unless the
+   * admin explicitly changes it. */
+  html: string;
+}
+
+/**
+ * Lists every "leaf-like" text-bearing element on a page, in document order, with node ids from
+ * the exact same numbering scheme applyStructuralPatches/annotateNodesForEditing use — so editing
+ * one of these and submitting it as a setInnerHtml StructuralPatch through applyVisualEdits is
+ * indistinguishable from having made the same edit by clicking through the visual editor. This is
+ * what makes a bulk content-edit view "cross-functional" with the visual editor and code editor:
+ * all three ultimately read and write the same stored HTML through the same node-id contract,
+ * recomputed fresh from whatever is currently saved, not cached from whichever tool touched it last.
+ *
+ * Only the outermost candidate in any nesting chain is listed — an element already covered by a
+ * listed ancestor (e.g. an <a> inside a <p> that's already in the list) is skipped, since editing
+ * the ancestor's innerHTML already reaches it. This is a heuristic (BULK_EDITABLE_TAGS is a fixed
+ * allowlist of typically-leaf text tags), not a guarantee every conceivable text node is surfaced —
+ * it deliberately excludes structural wrappers (div, section, nav, ul...) so the list reads as
+ * "the paragraphs/headings/links/buttons on this page," not the whole DOM tree.
+ */
+export function listEditableTextNodes(html: string): EditableTextNode[] {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const results: EditableTextNode[] = [];
+  let counter = 0;
+
+  function walk(node: ElementNode, insideCandidate: boolean): void {
+    let becameCandidate = false;
+    if (node.tagName) {
+      const nodeId = counter;
+      counter += 1;
+      if (!insideCandidate && BULK_EDITABLE_TAGS.has(node.tagName.toLowerCase())) {
+        const preview = textContent(node) ?? "";
+        const range = innerRange(node);
+        if (preview && range) {
+          results.push({ nodeId, tagName: node.tagName.toLowerCase(), preview, html: html.slice(range.start, range.end) });
+          becameCandidate = true;
+        }
+      }
+    }
+    for (const child of node.childNodes ?? []) walk(child, insideCandidate || becameCandidate);
+  }
+
+  walk(document, false);
+  return results;
+}
+
 /** Reads one element's current attribute value, located by node id — used to capture an "old" value (e.g. an image's src) before a patch overwrites it, so other places that shared that same value can be found afterward. */
 export function getNodeAttribute(html: string, nodeId: number, attrName: string): string | undefined {
   const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;

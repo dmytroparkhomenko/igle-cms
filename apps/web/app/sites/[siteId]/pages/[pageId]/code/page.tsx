@@ -29,9 +29,14 @@ export default async function CodeEditor({
           <h1>Code — {page.internalName}</h1>
           <p className="muted">{page.filePath}</p>
         </div>
-        <Link href={`/sites/${site.id}/pages/${page.id}`} className="button" style={{ background: "none", color: "var(--accent)" }}>
-          Back to fields
-        </Link>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link href={`/sites/${site.id}/pages/${page.id}/bulk-edit`} className="button button-ghost">
+            Bulk edit
+          </Link>
+          <Link href={`/sites/${site.id}/pages/${page.id}`} className="button" style={{ background: "none", color: "var(--accent)" }}>
+            Back to fields
+          </Link>
+        </div>
       </div>
 
       {site.metadata.contentLocked ? (
