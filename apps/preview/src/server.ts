@@ -241,20 +241,44 @@ const BRIDGE_SCRIPT = `(function () {
     true
   );
 
+  // Same targeting as click, plus immediately starts inline text editing — one motion instead of
+  // click-to-select, then a separate "Edit text" click in the sidebar. Images have no inline text
+  // to edit (they use the URL/upload form instead), so double-clicking one is a no-op here.
+  document.addEventListener(
+    "dblclick",
+    function (e) {
+      var el = target(e.target);
+      if (!el || el.tagName === "IMG") return;
+      e.preventDefault();
+      e.stopPropagation();
+      beginTextEdit(Number(el.getAttribute("data-igle-node")));
+    },
+    true
+  );
+
+  function beginTextEdit(nodeId) {
+    var el = document.querySelector('[data-igle-node="' + nodeId + '"]');
+    if (!el) return;
+    el.setAttribute("contenteditable", "true");
+    el.focus();
+    var commit = function () {
+      el.removeAttribute("contenteditable");
+      parent.postMessage({ source: "igle-preview", type: "textEdited", nodeId: nodeId, html: el.innerHTML }, "*");
+    };
+    el.addEventListener("blur", commit, { once: true });
+  }
+
   window.addEventListener("message", function (e) {
     if (e.source !== window.parent || !e.data || e.data.source !== "igle-editor") return;
     var msg = e.data;
 
     if (msg.type === "startTextEdit") {
-      var el = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
-      if (!el) return;
-      el.setAttribute("contenteditable", "true");
-      el.focus();
-      var commit = function () {
-        el.removeAttribute("contenteditable");
-        parent.postMessage({ source: "igle-preview", type: "textEdited", nodeId: msg.nodeId, html: el.innerHTML }, "*");
-      };
-      el.addEventListener("blur", commit, { once: true });
+      beginTextEdit(msg.nodeId);
+    }
+
+    if (msg.type === "setInnerHtml") {
+      var toSetHtml = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (toSetHtml) toSetHtml.innerHTML = msg.html;
     }
 
     if (msg.type === "refresh") {

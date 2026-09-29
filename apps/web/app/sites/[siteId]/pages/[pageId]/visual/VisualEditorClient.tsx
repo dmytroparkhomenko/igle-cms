@@ -86,7 +86,17 @@ export function VisualEditorClient({
   const shellRef = useRef<HTMLDivElement>(null);
   const [interactive, setInteractive] = useState(false);
   const [selected, setSelected] = useState<SelectedElement | null>(null);
-  const [patches, setPatches] = useState<PendingPatch[]>([]);
+  // Undo/redo: `stack[index]` is always the current patches array — every user action pushes a new
+  // snapshot (truncating any redo future first), and undo/redo just moves the pointer. Kept as one
+  // state object (not separate stack/index states) so a commit is always a single atomic update —
+  // two separate setStates here would risk one reading the other's pre-update value.
+  const [editHistory, setEditHistory] = useState<{ stack: PendingPatch[][]; index: number }>({ stack: [[]], index: 0 });
+  const patches = editHistory.stack[editHistory.index]!;
+  // What to replay into the iframe once it finishes reloading after an undo/redo — reloading is
+  // the only reliable way to "undo" a removeNode/duplicateNode in the live DOM, since neither has
+  // an inverse the bridge script can apply directly. Stashed in a ref, not state, since it needs to
+  // be read synchronously from the onLoad callback, not through a render cycle.
+  const replayPatchesRef = useRef<PendingPatch[] | null>(null);
   const [status, setStatus] = useState<{ kind: "idle" | "saving" | "saved" | "error"; message?: string }>({ kind: "idle" });
   const [linkHrefDraft, setLinkHrefDraft] = useState("");
   const [linkTarget, setLinkTarget] = useState<string>(CUSTOM_LINK_TARGET);
@@ -145,7 +155,7 @@ export function VisualEditorClient({
       if (data.type === "textEdited" && typeof data.nodeId === "number") {
         const nodeId = data.nodeId;
         const html = data.html ?? "";
-        setPatches((prev) => [
+        commitPatches((prev) => [
           ...prev.filter((patch) => !(patch.nodeId === nodeId && patch.op === "setInnerHtml")),
           { nodeId, op: "setInnerHtml", value: html }
         ]);
@@ -154,6 +164,7 @@ export function VisualEditorClient({
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewOrigin, pages]);
 
   const postToFrame = useCallback(
@@ -162,6 +173,81 @@ export function VisualEditorClient({
     },
     [previewOrigin]
   );
+
+  /** Every queuing function calls this instead of setPatches directly — records the resulting
+   * array as a new history entry (dropping any redo future) so undo/redo has something to step
+   * through. Takes an updater function, like setState itself, so it always sees the true latest
+   * patches even from a stale-closure callback (e.g. the message listener above). */
+  function commitPatches(updater: (prev: PendingPatch[]) => PendingPatch[]): void {
+    setEditHistory((prev) => {
+      const next = updater(prev.stack[prev.index]!);
+      const truncated = [...prev.stack.slice(0, prev.index + 1), next];
+      return { stack: truncated, index: truncated.length - 1 };
+    });
+  }
+
+  function replayPatchToFrame(patch: PendingPatch): void {
+    switch (patch.op) {
+      case "setInnerHtml":
+        postToFrame({ type: "setInnerHtml", nodeId: patch.nodeId, html: patch.value ?? "" });
+        break;
+      case "setAttr":
+        postToFrame({ type: "setAttr", nodeId: patch.nodeId, attrName: patch.attrName, value: patch.value });
+        break;
+      case "removeAttr":
+        postToFrame({ type: "removeAttr", nodeId: patch.nodeId, attrName: patch.attrName });
+        break;
+      case "setStyle":
+        postToFrame({ type: "setStyle", nodeId: patch.nodeId, property: patch.styleProperty, value: patch.value });
+        break;
+      case "removeNode":
+        postToFrame({ type: "removeNode", nodeId: patch.nodeId });
+        break;
+      case "duplicateNode":
+        postToFrame({ type: "duplicateNode", nodeId: patch.nodeId });
+        break;
+    }
+  }
+
+  function handleIframeLoad(): void {
+    const toReplay = replayPatchesRef.current;
+    if (!toReplay) return;
+    replayPatchesRef.current = null;
+    for (const patch of toReplay) replayPatchToFrame(patch);
+  }
+
+  function jumpHistory(nextIndex: number): void {
+    replayPatchesRef.current = editHistory.stack[nextIndex] ?? [];
+    setEditHistory((prev) => ({ ...prev, index: nextIndex }));
+    setSelected(null);
+    setStatus({ kind: "idle" });
+    setReloadKey((key) => key + 1);
+  }
+
+  function undo(): void {
+    if (editHistory.index === 0 || status.kind === "saving") return;
+    jumpHistory(editHistory.index - 1);
+  }
+
+  function redo(): void {
+    if (editHistory.index >= editHistory.stack.length - 1 || status.kind === "saving") return;
+    jumpHistory(editHistory.index + 1);
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      // Cross-origin: keystrokes typed inside the iframe (including a contenteditable text edit)
+      // never reach this listener at all, so there's no risk of hijacking normal in-field undo —
+      // this only ever fires for keys pressed while focus is on the CMS page itself.
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "z") return;
+      event.preventDefault();
+      if (event.shiftKey) redo();
+      else undo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editHistory, status.kind]);
 
   function startTextEdit() {
     if (!selected) return;
@@ -175,7 +261,7 @@ export function VisualEditorClient({
 
   function queueAttr(nodeId: number, attrName: string, value: string) {
     postToFrame({ type: "setAttr", nodeId, attrName, value });
-    setPatches((prev) => [
+    commitPatches((prev) => [
       ...prev.filter((patch) => !(patch.nodeId === nodeId && (patch.op === "setAttr" || patch.op === "removeAttr") && patch.attrName === attrName)),
       { nodeId, op: "setAttr", attrName, value }
     ]);
@@ -183,7 +269,7 @@ export function VisualEditorClient({
 
   function queueRemoveAttr(nodeId: number, attrName: string) {
     postToFrame({ type: "removeAttr", nodeId, attrName });
-    setPatches((prev) => [
+    commitPatches((prev) => [
       ...prev.filter((patch) => !(patch.nodeId === nodeId && (patch.op === "setAttr" || patch.op === "removeAttr") && patch.attrName === attrName)),
       { nodeId, op: "removeAttr", attrName }
     ]);
@@ -206,7 +292,7 @@ export function VisualEditorClient({
   function queueColor(property: "color" | "background-color", value: string) {
     if (!selected) return;
     postToFrame({ type: "setStyle", nodeId: selected.nodeId, property, value });
-    setPatches((prev) => [
+    commitPatches((prev) => [
       ...prev.filter((patch) => !(patch.nodeId === selected.nodeId && patch.op === "setStyle" && patch.styleProperty === property)),
       { nodeId: selected.nodeId, op: "setStyle", styleProperty: property, value }
     ]);
@@ -225,7 +311,7 @@ export function VisualEditorClient({
       const body = await parseJsonResponse(response);
       if (!response.ok) throw new Error((body.error as { message?: string } | undefined)?.message ?? "Save failed.");
       const otherPages = (body.updatedPageIds as unknown[] | undefined)?.length ?? 0;
-      setPatches([]);
+      setEditHistory({ stack: [[]], index: 0 });
       setSelected(null);
       setStatus({
         kind: "saved",
@@ -241,7 +327,7 @@ export function VisualEditorClient({
   }
 
   function discard() {
-    setPatches([]);
+    setEditHistory({ stack: [[]], index: 0 });
     setSelected(null);
     setStatus({ kind: "idle" });
     setReloadKey((key) => key + 1);
@@ -250,7 +336,7 @@ export function VisualEditorClient({
   function removeBlock() {
     if (!selected) return;
     postToFrame({ type: "removeNode", nodeId: selected.nodeId });
-    setPatches((prev) => [...prev.filter((patch) => patch.nodeId !== selected.nodeId), { nodeId: selected.nodeId, op: "removeNode" }]);
+    commitPatches((prev) => [...prev.filter((patch) => patch.nodeId !== selected.nodeId), { nodeId: selected.nodeId, op: "removeNode" }]);
     setSelected(null);
     setStatus({ kind: "idle" });
   }
@@ -258,7 +344,7 @@ export function VisualEditorClient({
   function duplicateBlock() {
     if (!selected) return;
     postToFrame({ type: "duplicateNode", nodeId: selected.nodeId });
-    setPatches((prev) => [...prev, { nodeId: selected.nodeId, op: "duplicateNode" }]);
+    commitPatches((prev) => [...prev, { nodeId: selected.nodeId, op: "duplicateNode" }]);
     setStatus({ kind: "idle" });
   }
 
@@ -366,6 +452,7 @@ export function VisualEditorClient({
           <PreviewFrame
             reloadKey={reloadKey}
             frameRef={iframeRef}
+            onIframeLoad={handleIframeLoad}
             src={previewUrl}
             title="Visual editor preview"
             hideFullscreenButton
@@ -503,6 +590,31 @@ export function VisualEditorClient({
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 16, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+            <button
+              type="button"
+              className="button button-secondary"
+              style={{ fontSize: 12.5, padding: "9px 10px" }}
+              onClick={undo}
+              disabled={editHistory.index === 0 || status.kind === "saving"}
+              title="Undo (Ctrl/Cmd+Z)"
+              aria-label="Undo"
+            >
+              &#8630; Undo
+            </button>
+            <button
+              type="button"
+              className="button button-secondary"
+              style={{ fontSize: 12.5, padding: "9px 10px" }}
+              onClick={redo}
+              disabled={editHistory.index >= editHistory.stack.length - 1 || status.kind === "saving"}
+              title="Redo (Ctrl/Cmd+Shift+Z)"
+              aria-label="Redo"
+            >
+              &#8631; Redo
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
             <button className="button" type="button" onClick={save} disabled={status.kind === "saving" || patches.length === 0}>
               {status.kind === "saving" ? "Saving…" : "Save changes"}
             </button>
@@ -550,11 +662,20 @@ export function VisualEditorClient({
                 immediately; nothing is saved until you click Save changes.
               </dd>
               <dt>Text</dt>
-              <dd>Click Edit text, then click the highlighted text in the preview and click away to commit it.</dd>
+              <dd>
+                Double-click any text in the preview to start editing it immediately, or click it once to select it
+                and use the Edit text button in the sidebar. Click away (or elsewhere) to commit the change.
+              </dd>
               <dt>Links</dt>
               <dd>Linking to one of this site&apos;s own pages stays correct no matter where the site ends up hosted.</dd>
               <dt>Duplicate &amp; Remove block</dt>
               <dd>Neither takes effect until you click Save changes — Discard any time before that.</dd>
+              <dt>Undo &amp; Redo</dt>
+              <dd>
+                Steps back through your unsaved changes one at a time — Ctrl/Cmd+Z to undo, Ctrl/Cmd+Shift+Z to redo
+                (works whenever focus isn&apos;t inside a text field you&apos;re actively typing in). Discard still
+                clears everything at once if that&apos;s what you actually want.
+              </dd>
               <dt>Site navigation</dt>
               <dd>
                 Edit the header or footer on this page (click into it above, like any other content), save, then sync
