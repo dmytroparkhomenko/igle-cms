@@ -98,6 +98,8 @@ export function VisualEditorClient({
   // be read synchronously from the onLoad callback, not through a render cycle.
   const replayPatchesRef = useRef<PendingPatch[] | null>(null);
   const [status, setStatus] = useState<{ kind: "idle" | "saving" | "saved" | "error"; message?: string }>({ kind: "idle" });
+  const [htmlEditorOpen, setHtmlEditorOpen] = useState(false);
+  const [htmlDraft, setHtmlDraft] = useState("");
   const [linkHrefDraft, setLinkHrefDraft] = useState("");
   const [linkTarget, setLinkTarget] = useState<string>(CUSTOM_LINK_TARGET);
   const [reloadKey, setReloadKey] = useState(0);
@@ -252,6 +254,31 @@ export function VisualEditorClient({
   function startTextEdit() {
     if (!selected) return;
     postToFrame({ type: "startTextEdit", nodeId: selected.nodeId });
+  }
+
+  /** For a whole section of mixed content (headings, paragraphs, lists, tables) rather than one
+   * line of text — contenteditable is awkward for that much structure, and there's no way to
+   * introduce a brand-new element type through it at all. This opens the selected element's real
+   * innerHTML as a plain textarea: paste in a whole block written elsewhere (a different tool, an
+   * AI writing assistant, whatever) and it replaces this element's content exactly, structure and
+   * all — not constrained to editing text inside elements that already existed. */
+  function openHtmlEditor() {
+    if (!selected) return;
+    setHtmlDraft(selected.html);
+    setHtmlEditorOpen(true);
+  }
+
+  function applyHtmlEditor() {
+    if (!selected) return;
+    const nodeId = selected.nodeId;
+    const html = htmlDraft;
+    postToFrame({ type: "setInnerHtml", nodeId, html });
+    commitPatches((prev) => [...prev.filter((patch) => !(patch.nodeId === nodeId && patch.op === "setInnerHtml")), { nodeId, op: "setInnerHtml", value: html }]);
+    const strip = document.createElement("div");
+    strip.innerHTML = html;
+    setSelected((prev) => (prev ? { ...prev, html, text: strip.textContent ?? "" } : prev));
+    setHtmlEditorOpen(false);
+    setStatus({ kind: "idle" });
   }
 
   function selectParent() {
@@ -496,9 +523,14 @@ export function VisualEditorClient({
                   <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                     {selected.text?.slice(0, 140) || "(empty)"}
                   </p>
-                  <button className="button" type="button" onClick={startTextEdit}>
-                    Edit text
-                  </button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button className="button" type="button" onClick={startTextEdit}>
+                      Edit text
+                    </button>
+                    <button className="button button-secondary" type="button" onClick={openHtmlEditor} title="Edit this element's full inner HTML — for sections with headings, lists, tables, or content you're pasting in from elsewhere">
+                      Edit as HTML
+                    </button>
+                  </div>
                 </>
               )}
 
@@ -633,6 +665,65 @@ export function VisualEditorClient({
         </aside>
       </div>
 
+      {htmlEditorOpen && selected ? (
+        <div
+          className="deploy-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Edit as HTML"
+          onClick={() => setHtmlEditorOpen(false)}
+        >
+          <div className="editor-info-modal" style={{ maxWidth: 760, width: "92vw", maxHeight: "88vh" }} onClick={(event) => event.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <h3 style={{ margin: 0 }}>
+                Edit as HTML — &lt;{selected.tagName}&gt;
+              </h3>
+              <button
+                type="button"
+                className="button button-ghost"
+                style={{ padding: "2px 6px" }}
+                onClick={() => setHtmlEditorOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="muted" style={{ fontSize: 12, margin: "8px 0 10px" }}>
+              Everything inside this element, as raw HTML — add or remove headings, paragraphs, lists, tables,
+              anything. Paste in a whole block you wrote or generated elsewhere and it replaces this section&apos;s
+              content exactly. Queued like any other edit — nothing is saved until you click Save changes, and it
+              undoes the same way too.
+            </p>
+            <textarea
+              value={htmlDraft}
+              onChange={(event) => setHtmlDraft(event.target.value)}
+              rows={18}
+              spellCheck={false}
+              style={{
+                width: "100%",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 13,
+                lineHeight: 1.5,
+                padding: 10,
+                border: "1px solid var(--line)",
+                borderRadius: 6,
+                color: "var(--text)",
+                background: "var(--panel)",
+                resize: "vertical"
+              }}
+            />
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="button" type="button" onClick={applyHtmlEditor}>
+                Apply
+              </button>
+              <button className="button button-ghost" type="button" onClick={() => setHtmlEditorOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showInfo ? (
         <div
           className="deploy-modal-backdrop"
@@ -664,7 +755,11 @@ export function VisualEditorClient({
               <dt>Text</dt>
               <dd>
                 Double-click any text in the preview to start editing it immediately, or click it once to select it
-                and use the Edit text button in the sidebar. Click away (or elsewhere) to commit the change.
+                and use the Edit text button in the sidebar. Click away (or elsewhere) to commit the change. For a
+                whole section of mixed content — headings, paragraphs, lists, tables together — use Edit as HTML
+                instead: it's the section's raw markup in a plain text box, so you can paste in something written
+                elsewhere (by another tool, an AI assistant, whatever) and it replaces the section exactly, not
+                limited to elements that were already there.
               </dd>
               <dt>Links</dt>
               <dd>Linking to one of this site&apos;s own pages stays correct no matter where the site ends up hosted.</dd>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPageSEO, applyStructuralPatches, listEditableTextNodes, parsePageSEO, replaceImageSrcEverywhere } from "@igle/html-engine";
+import { applyPageSEO, parsePageSEO, replaceImageSrcEverywhere } from "@igle/html-engine";
 
 describe("HTML engine", () => {
   it("extracts SEO fields and page counts", () => {
@@ -75,30 +75,5 @@ describe("HTML engine", () => {
     expect(result.html).toContain('srcset="assets/other.webp"');
     expect(result.html).toContain('src="/site/media/new-logo.webp"');
     expect(result.html).toContain('src="/site/assets/unrelated.webp"');
-  });
-
-  it("lists leaf text nodes for bulk editing, skipping structural wrappers and nested duplicates", () => {
-    const html =
-      "<html><body>" +
-      "<div><h1>Welcome to the site</h1><p>First paragraph with <strong>bold</strong> text.</p></div>" +
-      "<ul><li>One</li><li>Two</li></ul>" +
-      "<div></div>" +
-      "</body></html>";
-    const nodes = listEditableTextNodes(html);
-    const previews = nodes.map((node) => node.preview);
-    expect(previews).toEqual(["Welcome to the site", "First paragraph with bold text.", "One", "Two"]);
-    // The <p>'s html field preserves the inline <strong> markup, not just its stripped preview text.
-    const paragraph = nodes.find((node) => node.preview.startsWith("First paragraph"));
-    expect(paragraph?.html).toBe("First paragraph with <strong>bold</strong> text.");
-    // No entry for the wrapping <div>s (structural, not leaf text) or an empty one.
-    expect(nodes.some((node) => node.tagName === "div")).toBe(false);
-  });
-
-  it("round-trips a bulk-edit save through the exact same setInnerHtml patch the visual editor uses", () => {
-    const html = "<html><body><p>Old copy.</p></body></html>";
-    const nodes = listEditableTextNodes(html);
-    const target = nodes.find((node) => node.tagName === "p")!;
-    const result = applyStructuralPatches(html, [{ nodeId: target.nodeId, op: "setInnerHtml", value: "New copy." }]);
-    expect(result.html).toBe("<html><body><p>New copy.</p></body></html>");
   });
 });

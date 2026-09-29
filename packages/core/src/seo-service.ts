@@ -10,14 +10,12 @@ import {
   findRelativeReferences,
   getNodeAttribute,
   getNodeTagName,
-  listEditableTextNodes as listEditableTextNodesInHtml,
   parsePageSEO,
   replaceElementByTag,
   replaceImageSrcEverywhere,
   replacePageBodyMiddle,
   resolveRelativeReference,
   stableHash,
-  type EditableTextNode,
   type ParsedField,
   type SeoPatchInput,
   type StructuralPatch
@@ -647,23 +645,6 @@ export class SEOService {
     if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
     const content = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
     return extractPageBodyMiddle(content).middle;
-  }
-
-  /**
-   * Powers the bulk content-edit view: every paragraph/heading/link/etc. on the page, with node
-   * ids from the same numbering scheme applyVisualEdits itself uses (both read the page's current,
-   * full file — not the body-middle-only view the code editor shows, and not some annotated/cached
-   * copy) — so a bulk edit submitted from here lands through applyVisualEdits as ordinary
-   * setInnerHtml patches, identical in every way to the same edits made by hand in the visual
-   * editor. Gated on sites.edit (not sites.code) since that's the permission that actually governs
-   * this kind of content change, regardless of which screen it's made from.
-   */
-  async listEditableTextNodes(site: SiteRecord, pageId: string, actor: Actor): Promise<EditableTextNode[]> {
-    assertCan(actor, "sites.edit", site.id);
-    const page = await this.getPage(site.id, pageId);
-    if (!page) throw new IgleError("PAGE_NOT_FOUND", "Page was not found.", 404);
-    const content = await fs.readFile(resolveInside(site.repoPath, page.filePath), "utf8");
-    return listEditableTextNodesInHtml(content);
   }
 
   /** Splices edited body-middle markup back into the page's current file, leaving its header/footer bytes untouched, then saves it the same way a full source save does. */

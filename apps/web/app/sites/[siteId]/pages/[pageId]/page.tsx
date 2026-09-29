@@ -52,9 +52,6 @@ export default async function PageEditor({
           <Link href={`/sites/${site.id}/pages/${page.id}/visual`} className="button">
             Open visual editor
           </Link>
-          <Link href={`/sites/${site.id}/pages/${page.id}/bulk-edit`} className="button" style={{ background: "none", color: "var(--accent)" }}>
-            Bulk edit
-          </Link>
           <Link href={`/sites/${site.id}/pages/${page.id}/code`} className="button" style={{ background: "none", color: "var(--accent)" }}>
             Edit source
           </Link>
