@@ -199,7 +199,7 @@ export function applyPageSEO(html: string, fields: SeoPatchInput): { html: strin
   }
 
   if (fields.favicon !== undefined) {
-    applySingletonAttribute(ms, html, faviconNodes, headNode, "link", "href", fields.favicon, patches, '<link rel="icon" href="">');
+    applyFaviconLinks(ms, html, faviconNodes, headNode, fields.favicon, patches);
   }
 
   if (fields.robots !== undefined) {
@@ -1174,6 +1174,49 @@ function applySingletonElementText(
   const snippet = `${lineEnding}  <${tagName}>${escapeHtmlText(value)}</${tagName}>`;
   ms.appendLeft(insertion, snippet);
   patches.push({ start: insertion, end: insertion });
+}
+
+/**
+ * Favicon gets its own update path instead of applySingletonAttribute's "more than one, throw"
+ * behavior — real and imported sites commonly carry several `<link rel="icon"...>` tags (separate
+ * size variants, or both `rel="icon"` and `rel="shortcut icon"`), which isn't the kind of genuine
+ * conflict multiple `<title>` tags would be. Uploading a new favicon should point every one of
+ * them at the new image, not silently skip the page — confirmed the actual cause of "favicon
+ * won't change": applySingletonAttribute threw AMBIGUOUS_FIELD on any page with more than one
+ * icon link, and SEOService.applyFaviconToAllPages swallows that into a skip, not an error.
+ */
+function applyFaviconLinks(
+  ms: TextPatcher,
+  html: string,
+  nodes: ElementNode[],
+  headNode: ElementNode | undefined,
+  value: string | null,
+  patches: SourceRange[]
+): void {
+  if (nodes.length === 0) {
+    if (value === null) return;
+    const insertion = headInsertionOffset(headNode, html);
+    const lineEnding = html.includes("\r\n") ? "\r\n" : "\n";
+    const snippet = `${lineEnding}  <link rel="icon" href="${escapeHtmlAttribute(value)}">`;
+    ms.appendLeft(insertion, snippet);
+    patches.push({ start: insertion, end: insertion });
+    return;
+  }
+
+  for (const node of nodes) {
+    if (value === null) {
+      const location = node.sourceCodeLocation;
+      if (!location) continue;
+      ms.remove(location.startOffset, location.endOffset);
+      patches.push({ start: location.startOffset, end: location.endOffset });
+      continue;
+    }
+    const range = attrValueRange(node, "href", html);
+    if (!range) continue;
+    const replacement = replaceAttributeValue(html.slice(range.start, range.end), "href", value);
+    ms.overwrite(range.start, range.end, replacement);
+    patches.push(range);
+  }
 }
 
 function applySingletonAttribute(

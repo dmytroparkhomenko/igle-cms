@@ -42,6 +42,32 @@ describe("HTML engine", () => {
     expect(result.patches).toHaveLength(3);
   });
 
+  it("inserts a new favicon link when the page has none yet", () => {
+    const html = "<html><head><title>A</title></head><body></body></html>";
+    const result = applyPageSEO(html, { favicon: "/media/new-icon.png" });
+    expect(result.html).toContain('<link rel="icon" href="/media/new-icon.png">');
+  });
+
+  it("updates an existing favicon link in place", () => {
+    const html = '<html><head><link rel="icon" href="/old-icon.png"></head><body></body></html>';
+    const result = applyPageSEO(html, { favicon: "/media/new-icon.png" });
+    expect(result.html).toContain('href="/media/new-icon.png"');
+    expect(result.html).not.toContain("/old-icon.png");
+  });
+
+  it("updates every icon link instead of throwing when a page has more than one (regression: this silently skipped the whole page before)", () => {
+    const html =
+      '<html><head>' +
+      '<link rel="icon" href="/old-16.png" sizes="16x16">' +
+      '<link rel="shortcut icon" href="/old-32.png" sizes="32x32">' +
+      "</head><body></body></html>";
+    const result = applyPageSEO(html, { favicon: "/media/new-icon.png" });
+    expect(result.html).not.toContain("/old-16.png");
+    expect(result.html).not.toContain("/old-32.png");
+    expect(result.html.match(/href="\/media\/new-icon\.png"/g)).toHaveLength(2);
+    expect(result.patches).toHaveLength(2);
+  });
+
   it("replaces a plain <img src> and strips its (now stale) srcset", () => {
     const html = '<img src="/site/assets/a.webp" srcset="/site/assets/a.webp 1x, /site/assets/a-2x.webp 2x">';
     const result = replaceImageSrcEverywhere(html, "/site/assets/a.webp", "/site/media/new.webp");
