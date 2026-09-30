@@ -56,6 +56,9 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     const canonicalDomainRaw = form.get("canonicalDomain");
     if (canonicalDomainRaw !== null) settings.canonicalDomain = String(canonicalDomainRaw);
 
+    const affiliateLinkOverrideRaw = form.get("affiliateLinkOverride");
+    if (affiliateLinkOverrideRaw !== null) settings.affiliateLinkOverride = String(affiliateLinkOverrideRaw);
+
     const hreflangTargetsRaw = form.get("hreflangTargets");
     if (hreflangTargetsRaw !== null) {
       settings.hreflangTargets = String(hreflangTargetsRaw)

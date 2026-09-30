@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
+import { affiliateClickScript, CTA_SHIP_ATTR, renameCtaAttribute } from "@igle/html-engine";
 import { effectiveSiteLanguageTag, scriptsMetadataSchema, validatePagesMetadata, validateSiteMetadata } from "@igle/shared";
 
 export interface FootprintIssue {
@@ -36,6 +37,15 @@ export interface BuildSiteInput {
   minifyHtml?: boolean;
   /** Mirror pair (see MirrorService/DeployService) — when set, every page gets reciprocal hreflang tags gluing this build's domain to the partner's. */
   hreflangPartner?: { baseUrl: string; languageTag: string };
+  /**
+   * This site's resolved affiliate destination (see AffiliateLinkService.resolveForSite),
+   * computed once by DeployService right before calling buildSite. When set, every
+   * `data-igle-cta`-marked element gets a click-redirect script with this URL baked directly in —
+   * no request back to the CMS at click time (see IGLE-14). Omitted entirely (not just falsy) when
+   * nothing's configured, so a site with no destination yet still ships cleanly, just without any
+   * redirect wiring.
+   */
+  affiliateLinkUrl?: string;
 }
 
 export interface BuildSiteResult {
@@ -60,6 +70,10 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   const scripts = scriptsMetadataSchema.parse(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/scripts.json"));
 
   await injectScripts(buildPath, scripts.scripts.filter((script) => script.enabled && ["production", "both"].includes(script.environment)));
+  // Always runs, even with no affiliateLinkUrl: renaming data-igle-cta -> data-go has to happen
+  // unconditionally, or an untagged-but-marked site would still ship the internal marker and trip
+  // scanFootprint below (which rejects any leftover "data-igle-" token in build output).
+  await bakeAffiliateLinks(buildPath, input.affiliateLinkUrl);
   if (site.sitemap.enabled) {
     await writeSitemap(buildPath, site, pages.pages, input.productionBaseUrl, input.repoPath, input.commitSha);
   }
@@ -158,6 +172,27 @@ async function injectScripts(
       html = injectScript(html, script.placement, script.code);
     }
     await fs.writeFile(absolutePath, html, "utf8");
+  }
+}
+
+/**
+ * Converts every authoring-time `data-igle-cta` marker to the shipped `data-go` attribute (see
+ * CTA_SHIP_ATTR), and — only when `url` is provided — appends one click-redirect script per page
+ * with that URL baked directly in (see affiliateClickScript). The rename always runs regardless of
+ * `url`: it's what keeps scanFootprint clean even for a site with tagged CTAs but no affiliate
+ * link configured yet.
+ */
+async function bakeAffiliateLinks(buildPath: string, url: string | undefined): Promise<void> {
+  const htmlFiles = (await listFiles(buildPath)).filter((filePath) => [".html", ".htm"].includes(path.extname(filePath).toLowerCase()));
+  for (const filePath of htmlFiles) {
+    const absolutePath = path.join(buildPath, filePath);
+    const original = await fs.readFile(absolutePath, "utf8");
+    const renamed = renameCtaAttribute(original, "data-igle-cta", CTA_SHIP_ATTR);
+    let html = renamed.html;
+    if (renamed.count > 0 && url) {
+      html = injectScript(html, "body-end", affiliateClickScript(url, CTA_SHIP_ATTR));
+    }
+    if (html !== original) await fs.writeFile(absolutePath, html, "utf8");
   }
 }
 

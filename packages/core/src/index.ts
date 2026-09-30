@@ -1,3 +1,4 @@
+export * from "./affiliate-link-service.js";
 export * from "./auth-service.js";
 export * from "./cloudflare-account-service.js";
 export * from "./deploy-service.js";

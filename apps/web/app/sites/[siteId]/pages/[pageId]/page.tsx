@@ -14,10 +14,10 @@ export default async function PageEditor({
   searchParams
 }: {
   params: Promise<{ siteId: string; pageId: string }>;
-  searchParams: Promise<{ updated?: string; error?: string }>;
+  searchParams: Promise<{ updated?: string; error?: string; created?: string }>;
 }) {
   const { siteId, pageId } = await params;
-  const { updated, error } = await searchParams;
+  const { updated, error, created } = await searchParams;
   const site = await runtime.siteService.get(siteId, (await requireActorOrRedirect()));
   if (!site) notFound();
 
@@ -44,11 +44,12 @@ export default async function PageEditor({
       <div className="toolbar">
         <div>
           <h1>{page.internalName}</h1>
-          <p className="muted">
-            {page.route} · <PreviewLink originFallback={previewOrigin} path={`/${site.slug}${page.route}`}>Preview</PreviewLink>
-          </p>
+          <p className="muted">{page.route}</p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
+          <PreviewLink originFallback={previewOrigin} path={`/${site.slug}${page.route}`} className="button" style={{ background: "none", color: "var(--accent)" }}>
+            Preview
+          </PreviewLink>
           <Link href={`/sites/${site.id}/pages/${page.id}/visual`} className="button">
             Open visual editor
           </Link>
@@ -58,6 +59,11 @@ export default async function PageEditor({
         </div>
       </div>
 
+      {created ? (
+        <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
+          Page created — header and footer synced to match the rest of the site.
+        </article>
+      ) : null}
       {updated ? (
         <article className="card" style={{ borderColor: "var(--accent)", marginBottom: 16 }}>
           Saved as revision #{updated}.

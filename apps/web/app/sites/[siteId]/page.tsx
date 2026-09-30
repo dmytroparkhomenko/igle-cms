@@ -2,11 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { findTaggedCtaLinks } from "@igle/html-engine";
 import { runtime } from "../../../lib/runtime";
 import { requireActorOrRedirect } from "../../../lib/session";
 import { resolveAssetRef } from "../../../lib/asset-ref";
 import { domainStatusColor, domainStatusLabel } from "../../../lib/domain-status";
 import { extractFaviconHref } from "../../../lib/favicon";
+import { AddPageButton } from "./AddPageButton";
 import { ApplyLanguageButton } from "./ApplyLanguageButton";
 import { DeployButton } from "./DeployButton";
 import { FixLinksButton } from "./FixLinksButton";
@@ -77,6 +79,20 @@ export default async function SiteDetailPage({
   const trashedCount = state.pages.filter(
     (page) => page.siteId === site.id && page.deletedAt,
   ).length;
+  const availablePageTypes = await runtime.templateService.availablePageTypes(site);
+  // Just a count for the "Affiliate Link" tab badge — the detail list lives on that dedicated page.
+  const taggedLinksCount = (
+    await Promise.all(
+      pages.map(async (page) => {
+        try {
+          const html = await fs.readFile(path.join(site.repoPath, page.filePath), "utf8");
+          return findTaggedCtaLinks(html).length;
+        } catch {
+          return 0;
+        }
+      })
+    )
+  ).reduce((sum, count) => sum + count, 0);
   const revisions = state.revisions
     .filter((revision) => revision.siteId === site.id)
     .slice()
@@ -359,6 +375,7 @@ export default async function SiteDetailPage({
             <Link href={`/sites/${site.id}/redirects`}>Redirects</Link>
             <Link href={`/sites/${site.id}/scripts`}>Scripts</Link>
             <Link href={`/sites/${site.id}/header-footer`}>Header/Footer</Link>
+            <Link href={`/sites/${site.id}/affiliate-link`}>Affiliate Link{taggedLinksCount > 0 ? ` (${taggedLinksCount})` : ""}</Link>
           </div>
         </div>
 
@@ -899,6 +916,11 @@ export default async function SiteDetailPage({
           >
             Bulk edit SEO
           </Link>
+          <AddPageButton
+            siteId={site.id}
+            pages={pages.map((page) => ({ id: page.id, internalName: page.internalName, route: page.route }))}
+            pageTypes={availablePageTypes.map((pageType) => ({ key: pageType.key, name: pageType.name, route: pageType.route }))}
+          />
         </div>
       </div>
       <div className="list" style={{ marginBottom: 28 }}>

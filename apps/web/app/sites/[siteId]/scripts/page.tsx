@@ -285,6 +285,7 @@ export default async function ScriptsPage({
               <p className="muted">
                 {script.placement} · {script.environment} ·{" "}
                 {script.enabled ? "Enabled" : "Disabled"}
+                {script.protected ? " · Managed automatically" : ""}
               </p>
             </div>
             <form
@@ -309,21 +310,27 @@ export default async function ScriptsPage({
                 {script.enabled ? "Disable" : "Enable"}
               </button>
             </form>
-            <form
-              method="post"
-              action={`/api/sites/${site.id}/scripts/${script.id}/delete`}
-            >
-              <button
-                className="button button-danger"
-                type="submit"
-                style={{
-                  fontSize: 12.5,
-                  padding: "6px 10px",
-                }}
+            {script.protected ? (
+              <span className="status" title="This script is provisioned automatically (e.g. the affiliate link redirect) and can't be deleted here.">
+                Protected
+              </span>
+            ) : (
+              <form
+                method="post"
+                action={`/api/sites/${site.id}/scripts/${script.id}/delete`}
               >
-                Delete
-              </button>
-            </form>
+                <button
+                  className="button button-danger"
+                  type="submit"
+                  style={{
+                    fontSize: 12.5,
+                    padding: "6px 10px",
+                  }}
+                >
+                  Delete
+                </button>
+              </form>
+            )}
           </div>
         ))}
         {scripts.length === 0 ? (

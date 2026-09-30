@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { applyPageSEO, parsePageSEO } from "@igle/html-engine";
+import { applyPageSEO, parsePageSEO, tagAffiliateCtas } from "@igle/html-engine";
 import { assertCan, effectiveSiteLanguageTag, IgleError, matchesSiteLanguage, resolveInside, type Actor, type SiteMetadata } from "@igle/shared";
 import { ensureIgleMetadata, writeSiteMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { ScriptService } from "./script-service.js";
 import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
@@ -36,6 +37,8 @@ export interface UpdateSiteSettingsInput {
   canonicalDomain?: string | undefined;
   /** Explicit hreflang alternates for the domain-gluing strategy — replaces the whole list. */
   hreflangTargets?: SiteMetadata["hreflangTargets"] | undefined;
+  /** This site's own affiliate destination, overriding the country-level default — see AffiliateLinkService.resolveForSite. Pass an empty string to clear it back to "use the country default." */
+  affiliateLinkOverride?: string | undefined;
 }
 
 const DOMAIN_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
@@ -47,7 +50,8 @@ export class SiteService {
   constructor(
     private readonly dataDir: string,
     private readonly stateStore: JsonStateStore,
-    private readonly revisionService: RevisionService
+    private readonly revisionService: RevisionService,
+    private readonly scriptService: ScriptService
   ) {}
 
   async createBlankSite(input: CreateBlankSiteInput, actor: Actor): Promise<SiteRecord> {
@@ -207,6 +211,10 @@ export class SiteService {
     if (country && !COUNTRY_PATTERN.test(country)) {
       throw new IgleError("INVALID_COUNTRY", "Country must be a 2-letter ISO 3166-1 code, e.g. US.", 400, { country });
     }
+    const affiliateLinkOverride = input.affiliateLinkOverride?.trim();
+    if (affiliateLinkOverride && !/^https?:\/\/.+/i.test(affiliateLinkOverride)) {
+      throw new IgleError("INVALID_URL", "Enter a full URL starting with http:// or https://.", 400, { affiliateLinkOverride });
+    }
     if (input.hreflangTargets) {
       for (const target of input.hreflangTargets) {
         if (!HREFLANG_PATTERN.test(target.lang.trim())) {
@@ -275,6 +283,7 @@ export class SiteService {
       contentLockSource: input.contentLockSource ?? site.metadata.contentLockSource,
       canonicalDomain: input.canonicalDomain !== undefined ? input.canonicalDomain.trim() || undefined : site.metadata.canonicalDomain,
       hreflangTargets: input.hreflangTargets ?? site.metadata.hreflangTargets,
+      affiliateLinkOverride: input.affiliateLinkOverride !== undefined ? affiliateLinkOverride || undefined : site.metadata.affiliateLinkOverride,
       updatedAt: new Date().toISOString()
     };
 
@@ -419,6 +428,67 @@ export class SiteService {
     });
 
     return { revisionNumber: revision.revisionNumber, updatedPageIds };
+  }
+
+  /**
+   * On-demand counterpart to the automatic CTA tagging that runs at template-upload/site-creation
+   * time (TemplateService) — for a site that predates this feature, or whose template has been
+   * hand-edited since, re-scans every page for taggable affiliate CTAs (see tagAffiliateCtas). The
+   * actual click-redirect script is generated fresh at Deploy build time (see @igle/build's
+   * bakeAffiliateLinks), not stored here — this also cleans up any leftover script from the earlier
+   * (now-removed) per-site-provisioned-script architecture. Safe to run repeatedly: both steps are
+   * idempotent.
+   */
+  async rescanAffiliateCtas(site: SiteRecord, actor: Actor): Promise<{ revisionNumber: number; updatedPageIds: string[]; ctaLinksTagged: number }> {
+    assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
+    const state = await this.stateStore.read();
+    const pages = state.pages.filter((page) => page.siteId === site.id && !page.deletedAt);
+    const updatedPageIds: string[] = [];
+    let ctaLinksTagged = 0;
+
+    for (const page of pages) {
+      const filePath = resolveInside(site.repoPath, page.filePath);
+      try {
+        const original = await fs.readFile(filePath, "utf8");
+        const result = tagAffiliateCtas(original);
+        if (result.count === 0) continue;
+        await fs.writeFile(filePath, result.html, "utf8");
+        updatedPageIds.push(page.id);
+        ctaLinksTagged += result.count;
+      } catch {
+        // best-effort: a page that can't be read/patched is skipped rather than failing the whole run
+      }
+    }
+
+    const legacyScriptRemoved = await this.scriptService.removeLegacyAffiliateCloakScript(site, actor);
+
+    if (updatedPageIds.length === 0 && !legacyScriptRemoved) {
+      const existing = await this.revisionService.latest(site.id);
+      return { revisionNumber: existing?.revisionNumber ?? 0, updatedPageIds, ctaLinksTagged };
+    }
+
+    // A working-tree-only write (from either step above) is invisible to buildSite, which reads
+    // from a specific git commit, not the working tree — this commit is what actually makes the
+    // legacy-script removal (or freshly tagged CTAs) take effect on the next Deploy.
+    const title =
+      updatedPageIds.length > 0
+        ? `Tagged ${ctaLinksTagged} affiliate CTA link(s) across ${updatedPageIds.length} page(s)`
+        : "Removed the legacy per-site affiliate redirect script";
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "site-settings",
+      title,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    site.headRevisionId = revision.id;
+    await this.stateStore.update((state) => {
+      const existing = state.sites.find((item) => item.id === site.id);
+      if (existing) existing.headRevisionId = revision.id;
+    });
+
+    return { revisionNumber: revision.revisionNumber, updatedPageIds, ctaLinksTagged };
   }
 
   async updateSitemapAndRobots(

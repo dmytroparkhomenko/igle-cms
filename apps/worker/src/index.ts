@@ -1,6 +1,6 @@
 import path from "node:path";
 import pino from "pino";
-import { ImportService, JsonStateStore, RemoteSiteImportService, RevisionService, SiteService, TaskService, TelegramNotifier } from "@igle/core";
+import { ImportService, JsonStateStore, RemoteSiteImportService, RevisionService, ScriptService, SiteService, TaskService, TelegramNotifier } from "@igle/core";
 
 const logger = pino({ name: "igle-worker" });
 
@@ -12,11 +12,13 @@ logger.info(
 );
 
 const dataDir = process.env.IGLE_DATA_DIR ?? path.resolve(process.cwd(), "../../data");
+const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
 const stateStore = new JsonStateStore(dataDir);
-const telegramNotifier = new TelegramNotifier(stateStore, process.env.WEB_ORIGIN ?? "http://localhost:3000");
+const telegramNotifier = new TelegramNotifier(stateStore, webOrigin);
 const taskService = new TaskService(dataDir, stateStore, telegramNotifier);
 const revisionService = new RevisionService(stateStore);
-const siteService = new SiteService(dataDir, stateStore, revisionService);
+const scriptService = new ScriptService(revisionService);
+const siteService = new SiteService(dataDir, stateStore, revisionService, scriptService);
 const importService = new ImportService(stateStore, revisionService);
 const remoteSiteImportService = new RemoteSiteImportService(stateStore, siteService, importService);
 

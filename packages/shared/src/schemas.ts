@@ -84,6 +84,8 @@ export const siteMetadataSchema = z.object({
     .default({ mode: "cms-generated" }),
   /** Site-wide default for the <meta name="robots"> tag, injected at build time into any page that doesn't already set its own. */
   metaRobots: z.enum(["index", "noindex"]).default("index"),
+  /** This site's own affiliate destination, taking priority over the country-level default in AffiliateLinkService — see AffiliateLinkService.resolveForSite. Unset means "use the country default." */
+  affiliateLinkOverride: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 });
@@ -150,7 +152,9 @@ export const scriptsMetadataSchema = z.object({
           patterns: z.array(z.string()).default([])
         })
         .default({ mode: "all", paths: [], patterns: [] }),
-      owner: z.string().optional()
+      owner: z.string().optional(),
+      /** System-provisioned scripts (e.g. the affiliate click-redirect cloak) the Scripts UI won't offer to delete — an accidental delete here is silent revenue loss, not a broken tracking pixel. */
+      protected: z.boolean().default(false).optional()
     })
   )
 });

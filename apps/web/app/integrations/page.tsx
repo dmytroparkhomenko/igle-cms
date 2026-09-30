@@ -48,7 +48,10 @@ export default async function IntegrationsPage({
             </div>
             <div style={{ padding: "0 20px 16px", margin: 0 }}>
               <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                Where traffic goes, per country. Stored only — nothing on the sites reads or applies these yet.
+                Where a site&apos;s tagged CTAs redirect to, by the site&apos;s country — the fallback whenever a site has
+                no affiliate link override of its own (set per-site on that site&apos;s Affiliate Link page). Baked
+                directly into each site&apos;s own files at Deploy time, so a change here takes effect on every
+                affected site&apos;s <strong>next Deploy</strong>, not instantly.
               </p>
             </div>
             <form method="post" action="/api/integrations/affiliate-links">

@@ -1,13 +1,34 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import Fastify from "fastify";
-import { JsonStateStore } from "@igle/core";
-import { annotateNodesForEditing, neutralizeScripts } from "@igle/html-engine";
+import { AffiliateLinkService, JsonStateStore, type SiteRecord } from "@igle/core";
+import { affiliateClickScript, annotateNodesForEditing, neutralizeScripts } from "@igle/html-engine";
 import { IgleError, resolveInside } from "@igle/shared";
 
 const dataDir = process.env.IGLE_DATA_DIR ?? path.resolve(process.cwd(), "data");
 const stateStore = new JsonStateStore(dataDir);
+const affiliateLinkService = new AffiliateLinkService(stateStore);
 const app = Fastify({ logger: true });
+
+/**
+ * Same click-redirect script a real deploy bakes in (see @igle/build's bakeAffiliateLinks) —
+ * injected here too so marking an element as an affiliate link is actually checkable in the
+ * preview, not just after a full deploy. Resolves the destination the same way a deploy does
+ * (AffiliateLinkService.resolveForSite) but keyed off `data-igle-cta`, not the shipped `data-go`
+ * attribute — a real build renames it, but preview always serves the page's own un-renamed
+ * source, so the injected script has to match the name actually present here. Skipped entirely
+ * when nothing's configured (no override, no GEO match for the site's country) — nothing to send
+ * a click to. In edit mode this never actually fires: the bridge script's own document-level click
+ * listener runs first (capture phase) and calls stopPropagation(), so this delegated bubble-phase
+ * listener never sees the event — injecting it unconditionally is simplest and harmless rather
+ * than threading an edit-mode exception through.
+ */
+async function injectAffiliateCloak(html: string, site: SiteRecord): Promise<string> {
+  const destination = await affiliateLinkService.resolveForSite(site);
+  if (!destination) return html;
+  const script = affiliateClickScript(destination, "data-igle-cta");
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${script}</body>`) : `${html}${script}`;
+}
 
 const contentTypes: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -90,6 +111,7 @@ app.get("/:siteId/*", async (request, reply) => {
 
   if (contentType.startsWith("text/html")) {
     let html = rewriteAbsolutePaths(content.toString("utf8"), params.siteId);
+    html = await injectAffiliateCloak(html, site);
     if (editMode) {
       html = neutralizeScripts(html);
       html = annotateNodesForEditing(html);
@@ -148,6 +170,19 @@ const BRIDGE_SCRIPT = `(function () {
     return el && el.closest ? el.closest("[data-igle-node]") : null;
   }
 
+  // True when el's own parent is exactly the <a data-igle-cta> wrapper the "Mark as affiliate
+  // link" toggle creates for a non-<a> element (see wrapInAnchor/unwrapAnchor) — checked
+  // structurally (parent is an <a> carrying data-igle-cta, with el as its only element child)
+  // rather than by any session-local bookkeeping, so it reads correctly both for a wrap made this
+  // session and one that was saved and reloaded from disk.
+  function wrappingCtaAnchor(el) {
+    var parent = el.parentElement;
+    if (!parent || parent.tagName !== "A" || !parent.hasAttribute("data-igle-cta")) return null;
+    var elementChildren = parent.children;
+    if (elementChildren.length !== 1 || elementChildren[0] !== el) return null;
+    return parent;
+  }
+
   function describe(el) {
     var ancestors = [];
     var current = el.parentElement ? el.parentElement.closest("[data-igle-node]") : null;
@@ -156,6 +191,8 @@ const BRIDGE_SCRIPT = `(function () {
       current = current.parentElement ? current.parentElement.closest("[data-igle-node]") : null;
     }
     var computed = window.getComputedStyle(el);
+    var siblingElements = el.parentElement ? el.parentElement.children : [];
+    var siblingIndex = Array.prototype.indexOf.call(siblingElements, el);
     return {
       nodeId: Number(el.getAttribute("data-igle-node")),
       tagName: el.tagName.toLowerCase(),
@@ -167,6 +204,19 @@ const BRIDGE_SCRIPT = `(function () {
       className: el.getAttribute("class") || "",
       color: rgbToHex(computed.color),
       backgroundColor: rgbToHex(computed.backgroundColor),
+      borderColor: rgbToHex(computed.borderTopColor),
+      borderWidth: computed.borderTopWidth,
+      borderRadius: computed.borderTopLeftRadius,
+      padding: computed.paddingTop,
+      textAlign: computed.textAlign,
+      letterSpacing: computed.letterSpacing,
+      textTransform: computed.textTransform,
+      fontFamily: computed.fontFamily,
+      fontSize: computed.fontSize,
+      dataIgleCta: el.getAttribute("data-igle-cta"),
+      wrappedInCta: Boolean(wrappingCtaAnchor(el)),
+      hasPrevSibling: siblingIndex > 0,
+      hasNextSibling: siblingIndex !== -1 && siblingIndex < siblingElements.length - 1,
       ancestors: ancestors
     };
   }
@@ -203,6 +253,68 @@ const BRIDGE_SCRIPT = `(function () {
       }
     }
     return changed ? result.join(", ") : null;
+  }
+
+  // Same merge behavior as mergeStyleDeclaration on the server (@igle/html-engine) — sets one
+  // property in a "prop: val; prop2: val2" declaration list, preserving every other property
+  // already there, removing the property instead when value is blank.
+  function mergeDeclarationText(current, property, value) {
+    var declarations = {};
+    var order = [];
+    var parts = (current || "").split(";");
+    for (var i = 0; i < parts.length; i++) {
+      var colonIndex = parts[i].indexOf(":");
+      if (colonIndex === -1) continue;
+      var name = parts[i].slice(0, colonIndex).replace(/^\\s+|\\s+$/g, "").toLowerCase();
+      var val = parts[i].slice(colonIndex + 1).replace(/^\\s+|\\s+$/g, "");
+      if (!name) continue;
+      if (!(name in declarations)) order.push(name);
+      declarations[name] = val;
+    }
+    var key = property.trim().toLowerCase();
+    if (value.trim() === "") {
+      delete declarations[key];
+      order = order.filter(function (name) { return name !== key; });
+    } else {
+      if (!(key in declarations)) order.push(key);
+      declarations[key] = value.trim();
+    }
+    return order.map(function (name) { return name + ": " + declarations[name]; }).join("; ");
+  }
+
+  // Live-only preview of a :hover rule — never written to the page, just an ephemeral <style> tag
+  // in this iframe so hovering the element shows the effect immediately. Keyed off data-igle-node
+  // directly rather than assigning a real id, since nothing here needs to survive a reload. Plain
+  // string search rather than a regex, since the selector's shape is fixed and fully known here —
+  // nodeId is always numeric — so there's nothing that needs pattern-escaping.
+  function setHoverPreviewStyle(nodeId, property, value) {
+    var styleTag = document.getElementById("__igle_hover_preview__");
+    if (!styleTag) {
+      styleTag = document.createElement("style");
+      styleTag.id = "__igle_hover_preview__";
+      document.head.appendChild(styleTag);
+    }
+    var selector = '[data-igle-node="' + nodeId + '"]:hover';
+    var marker = selector + " {";
+    var current = styleTag.textContent || "";
+    var startIndex = current.indexOf(marker);
+    var currentDecl = "";
+    var before = current;
+    var after = "";
+    if (startIndex !== -1) {
+      var braceStart = startIndex + marker.length;
+      var braceEnd = current.indexOf("}", braceStart);
+      if (braceEnd !== -1) {
+        currentDecl = current.slice(braceStart, braceEnd);
+        before = current.slice(0, startIndex);
+        after = current.slice(braceEnd + 1);
+      } else {
+        startIndex = -1;
+      }
+    }
+    var nextDecl = mergeDeclarationText(currentDecl, property, value);
+    var newRule = selector + " { " + nextDecl + " }";
+    styleTag.textContent = startIndex !== -1 ? before + newRule + after : current + "\\n" + newRule;
   }
 
   function rgbToHex(rgb) {
@@ -272,10 +384,6 @@ const BRIDGE_SCRIPT = `(function () {
     if (e.source !== window.parent || !e.data || e.data.source !== "igle-editor") return;
     var msg = e.data;
 
-    if (msg.type === "startTextEdit") {
-      beginTextEdit(msg.nodeId);
-    }
-
     if (msg.type === "setInnerHtml") {
       var toSetHtml = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
       if (toSetHtml) toSetHtml.innerHTML = msg.html;
@@ -303,9 +411,53 @@ const BRIDGE_SCRIPT = `(function () {
       }
     }
 
+    if (msg.type === "moveUp" || msg.type === "moveDown") {
+      // A real DOM node move (not a content swap) — the moved element keeps its own
+      // data-igle-node attribute wherever it ends up, so the current selection (and any later
+      // undo/redo replay keyed on that same nodeId) stays correctly pointed at it.
+      var toMove = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (toMove && toMove.parentNode) {
+        if (msg.type === "moveUp" && toMove.previousElementSibling) {
+          toMove.parentNode.insertBefore(toMove, toMove.previousElementSibling);
+        } else if (msg.type === "moveDown" && toMove.nextElementSibling) {
+          toMove.parentNode.insertBefore(toMove.nextElementSibling, toMove);
+        }
+      }
+    }
+
+    if (msg.type === "wrapInAnchor") {
+      var toWrap = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (toWrap && toWrap.parentNode) {
+        var wrapper = document.createElement("a");
+        wrapper.setAttribute("data-igle-cta", "default");
+        wrapper.setAttribute("href", "#");
+        wrapper.setAttribute("target", "_blank");
+        wrapper.setAttribute("rel", "sponsored nofollow noopener noreferrer");
+        toWrap.parentNode.insertBefore(wrapper, toWrap);
+        wrapper.appendChild(toWrap);
+      }
+    }
+
+    if (msg.type === "unwrapAnchor") {
+      var toUnwrap = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      var wrapperEl = toUnwrap ? wrappingCtaAnchor(toUnwrap) : null;
+      if (toUnwrap && wrapperEl && wrapperEl.parentNode) {
+        wrapperEl.parentNode.insertBefore(toUnwrap, wrapperEl);
+        wrapperEl.remove();
+      }
+    }
+
+    // "important" priority — an inline style has the highest specificity of any *normal* CSS rule,
+    // but real templates commonly use !important on button/CTA classes (color, gradients), which
+    // would otherwise still win over a plain inline override. Without this, "change the background
+    // color" silently does nothing on exactly the elements it's most often used for.
     if (msg.type === "setStyle") {
       var toStyle = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
-      if (toStyle) toStyle.style.setProperty(msg.property, msg.value);
+      if (toStyle) toStyle.style.setProperty(msg.property, msg.value, "important");
+    }
+
+    if (msg.type === "setHoverStyle") {
+      setHoverPreviewStyle(msg.nodeId, msg.property, msg.value ? msg.value + " !important" : msg.value);
     }
 
     if (msg.type === "setAttr") {

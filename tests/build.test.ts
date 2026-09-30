@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildSite } from "@igle/build";
-import { ImportService, JsonStateStore, RevisionService, SEOService, SiteService, writeJson } from "@igle/core";
+import { ImportService, JsonStateStore, RevisionService, ScriptService, SEOService, SiteService, writeJson } from "@igle/core";
 import type { Actor } from "@igle/shared";
 
 const admin: Actor = { id: "admin", email: "admin@example.com", role: "administrator" };
@@ -136,11 +136,12 @@ async function testRuntime() {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "igle-build-test-"));
   const stateStore = new JsonStateStore(dataDir);
   const revisionService = new RevisionService(stateStore);
+  const scriptService = new ScriptService(revisionService);
   return {
     dataDir,
     stateStore,
     revisionService,
-    siteService: new SiteService(dataDir, stateStore, revisionService),
+    siteService: new SiteService(dataDir, stateStore, revisionService, scriptService),
     importService: new ImportService(stateStore, revisionService),
     seoService: new SEOService(stateStore, revisionService)
   };

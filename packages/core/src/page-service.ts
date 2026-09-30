@@ -16,7 +16,17 @@ export class PageService {
     private readonly revisionService: RevisionService
   ) {}
 
-  async duplicate(site: SiteRecord, pageId: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
+  /**
+   * `internalName` defaults to "<source> (Copy)" (the existing quick "Duplicate" button's
+   * behavior); the "Add page" flow passes an explicit name instead, since that page is meant to
+   * stick around as a real page, not read as a scratch copy of another one.
+   */
+  async duplicate(
+    site: SiteRecord,
+    pageId: string,
+    actor: Actor,
+    internalName?: string
+  ): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
     assertCan(actor, "sites.edit", site.id);
     assertSiteEditable(site);
     const page = await this.getPage(site.id, pageId);
@@ -35,7 +45,7 @@ export class PageService {
       id: id("page"),
       filePath: newFilePath,
       route: routeForFile(newFilePath, site.metadata.urlStyle),
-      internalName: `${page.internalName} (Copy)`,
+      internalName: internalName?.trim() || `${page.internalName} (Copy)`,
       fieldStates: {
         ...page.fieldStates,
         lang:

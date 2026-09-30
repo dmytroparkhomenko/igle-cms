@@ -318,10 +318,21 @@ export function neutralizeScripts(html: string): string {
 
 export interface StructuralPatch {
   nodeId: number;
-  op: "setInnerHtml" | "setAttr" | "removeAttr" | "removeNode" | "duplicateNode" | "setStyle";
+  op:
+    | "setInnerHtml"
+    | "setAttr"
+    | "removeAttr"
+    | "removeNode"
+    | "duplicateNode"
+    | "setStyle"
+    | "setHoverStyle"
+    | "moveUp"
+    | "moveDown"
+    | "wrapInAnchor"
+    | "unwrapAnchor";
   attrName?: string;
   value?: string;
-  /** For op "setStyle": the CSS property to set (e.g. "color", "background-color"). */
+  /** For op "setStyle"/"setHoverStyle": the CSS property to set (e.g. "color", "background-color"). */
   styleProperty?: string;
 }
 
@@ -392,6 +403,194 @@ export function extractPageBodyMiddle(html: string): { before: string; middle: s
 export function replacePageBodyMiddle(html: string, newMiddle: string): string {
   const { before, after } = extractPageBodyMiddle(html);
   return `${before}${newMiddle}${after}`;
+}
+
+const CTA_DEAD_HREF_PATTERN = /^(#|#!|javascript:void\(0\);?|javascript:;)$/i;
+const CTA_CLASS_PATTERN = /aff-link|affiliate/i;
+const CTA_REL_PATTERN = /\bsponsored\b/i;
+
+export interface CtaTagResult {
+  html: string;
+  count: number;
+}
+
+/**
+ * Auto-detects and marks affiliate CTA anchors with `data-igle-cta="<slot>"`, and neutralizes a
+ * real destination already sitting in their href (rewritten to "#") so it stops being visible and
+ * crawlable in the page's raw HTML — from then on the click-redirect script (see
+ * affiliateClickScript / renameCtaAttribute, baked in at Deploy build time by @igle/build) is what
+ * actually sends the click on, not the href.
+ *
+ * Three independent signals, each confirmed against real production markup rather than assumed:
+ *  - a dead/placeholder href already (`#`, `#!`, `javascript:void(0)`...)
+ *  - `rel="sponsored"` — the standard, purpose-built marker for a paid/affiliate link, and what
+ *    real templates here actually put on a real hardcoded destination (Google's own recommended
+ *    rel value for affiliate links) — this is the common case: most real CTAs are a plain
+ *    `<a href="https://real-offer.example/?pid=123" rel="sponsored ...">`, not a dead href at all
+ *  - an existing `aff-link`/`affiliate` class, or an existing `data-dynamic-link` marker
+ *
+ * Deliberately excludes guessing from an arbitrary external href alone — confirmed on real sites
+ * to sit right next to a real `rel="sponsored"` CTA is exactly the kind of legitimate outbound
+ * link (a regulator page, a responsible-gambling resource) that must never be cloaked.
+ *
+ * Idempotent: an element already carrying `data-igle-cta` is left untouched. Backfills
+ * `target="_blank"` and a safe `rel` when missing.
+ */
+export function tagAffiliateCtas(html: string): CtaTagResult {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  let count = 0;
+
+  for (const node of findElements(document, "a")) {
+    if (attr(node, "data-igle-cta") !== undefined) continue;
+    const href = (attr(node, "href") ?? "").trim();
+    const dynamicLink = attr(node, "data-dynamic-link");
+    const isDeadHref = CTA_DEAD_HREF_PATTERN.test(href);
+    const isMarkedClass = CTA_CLASS_PATTERN.test(attr(node, "class") ?? "");
+    const isSponsored = CTA_REL_PATTERN.test(attr(node, "rel") ?? "");
+    if (!isDeadHref && !isMarkedClass && !isSponsored && dynamicLink === undefined) continue;
+
+    const insertPos = startTagInsertOffset(node);
+    if (insertPos === undefined) continue;
+    const slot = dynamicLink?.trim() || "default";
+    ms.appendLeft(insertPos, ` data-igle-cta="${escapeHtmlAttribute(slot)}"`);
+    if (attr(node, "target") === undefined) ms.appendLeft(insertPos, ` target="_blank"`);
+    if (attr(node, "rel") === undefined) ms.appendLeft(insertPos, ` rel="sponsored nofollow noopener noreferrer"`);
+
+    if (!isDeadHref) {
+      const hrefRange = attrValueRange(node, "href", html);
+      if (hrefRange) {
+        ms.overwrite(hrefRange.start, hrefRange.end, replaceAttributeValue(html.slice(hrefRange.start, hrefRange.end), "href", "#"));
+      }
+    }
+    count += 1;
+  }
+
+  return { html: ms.toString(), count };
+}
+
+export interface UnmarkedExternalLink {
+  nodeId: number;
+  href: string;
+  text: string;
+}
+
+const SAFE_EXTERNAL_HOSTS = new Set(["fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net", "cdnjs.cloudflare.com"]);
+
+/**
+ * Read-only audit: every `<a>` pointing to an absolute external URL that isn't already tagged
+ * `data-igle-cta` and isn't on a small built-in allowlist of known-safe hosts (fonts/CDNs). Catches
+ * what `tagAffiliateCtas` deliberately won't touch automatically — a real, hardcoded affiliate URL
+ * with no placeholder href and no marker class at all (confirmed to happen: a real template had a
+ * live tracking link baked directly into 6 anchors, fully crawlable). Callers should additionally
+ * exclude the site's own production domain, which this function has no knowledge of.
+ */
+export function findUnmarkedExternalLinks(html: string): UnmarkedExternalLink[] {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const results: UnmarkedExternalLink[] = [];
+  walkElementsWithId(document, (node, id) => {
+    if (node.tagName !== "a" || attr(node, "data-igle-cta") !== undefined) return;
+    const href = (attr(node, "href") ?? "").trim();
+    if (!/^https?:\/\//i.test(href)) return;
+    let host: string;
+    try {
+      host = new URL(href).hostname.toLowerCase();
+    } catch {
+      return;
+    }
+    if (SAFE_EXTERNAL_HOSTS.has(host)) return;
+    results.push({ nodeId: id, href, text: (textContent(node) ?? "").slice(0, 140) });
+  });
+  return results;
+}
+
+export interface TaggedCtaLink {
+  nodeId: number;
+  tagName: string;
+  slot: string;
+  text: string;
+  href: string | null;
+}
+
+/**
+ * Every element already carrying `data-igle-cta`, regardless of how it got tagged (auto-detection,
+ * or the visual editor's "Mark as affiliate link" toggle, wrap included) — the full inventory of
+ * this site's affiliate links, as opposed to findUnmarkedExternalLinks's narrower "still needs
+ * attention" audit. Read-only.
+ */
+export function findTaggedCtaLinks(html: string): TaggedCtaLink[] {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const results: TaggedCtaLink[] = [];
+  walkElementsWithId(document, (node, id) => {
+    const slot = attr(node, "data-igle-cta");
+    if (slot === undefined) return;
+    results.push({
+      nodeId: id,
+      tagName: node.tagName ?? "",
+      slot,
+      text: (textContent(node) ?? "").slice(0, 140),
+      href: node.tagName === "a" ? (attr(node, "href") ?? null) : null
+    });
+  });
+  return results;
+}
+
+/**
+ * The attribute name a site's authoring markup carries `data-igle-cta` as once it's actually
+ * shipped (see renameCtaAttribute) — deliberately generic-looking rather than CMS-branded, since
+ * this ends up in the raw HTML of a real, public affiliate site (see IGLE-14: routing clicks
+ * through the CMS's own infrastructure was rejected specifically because it's a visible tell that
+ * ties every managed site back to one shared origin).
+ */
+export const CTA_SHIP_ATTR = "data-go";
+
+/**
+ * Renames every `data-igle-cta` (the internal authoring/editing marker) to `toAttr` in the final
+ * shipped HTML — called once at Deploy build time (@igle/build), never during authoring/preview,
+ * so the visual editor and preview bridge keep working against the stable `data-igle-cta` name
+ * throughout editing. Also keeps the CMS's own footprint scanner (which rejects any leftover
+ * `data-igle-*` marker in a build) satisfied even when no affiliate link is configured at all —
+ * see bakeAffiliateLinks in @igle/build, which always renames regardless of whether it also
+ * injects a click script.
+ */
+export function renameCtaAttribute(html: string, fromAttr: string, toAttr: string): { html: string; count: number } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  let count = 0;
+  for (const node of findElementsWithAttr(document, fromAttr)) {
+    const range = attrValueRange(node, fromAttr, html);
+    if (!range) continue;
+    const value = attr(node, fromAttr) ?? "";
+    ms.overwrite(range.start, range.end, `${toAttr}="${escapeHtmlAttribute(value)}"`);
+    count += 1;
+  }
+  return { html: ms.toString(), count };
+}
+
+function findElementsWithAttr(root: ElementNode, attrName: string): ElementNode[] {
+  const results: ElementNode[] = [];
+  visit(root, (node) => {
+    if (node.tagName && attr(node, attrName) !== undefined) results.push(node);
+  });
+  return results;
+}
+
+/**
+ * The actual click-redirect script — bakes `url` directly into the script text, so a real
+ * visitor's click resolves entirely client-side, on the site's own domain, with zero request back
+ * to the CMS (see IGLE-14). This means changing a site's affiliate link only takes effect on that
+ * site's *next Deploy*, not instantly — the trade made deliberately in exchange for never routing
+ * a real visitor's click through shared CMS infrastructure.
+ *
+ * Delegated (one listener on `document`, `.closest("[attr]")` per click) rather than a per-element
+ * listener attached up front: during CMS preview/editing, an element can be marked live via
+ * postMessage without a reload, so an upfront querySelectorAll scan would miss it — delegation
+ * checks at click time instead. In the final shipped build there's no live-tagging concern, but
+ * the same script text is used in both places (see apps/preview's own injection) so there's one
+ * source of truth for its behavior.
+ */
+export function affiliateClickScript(url: string, attrName: string = CTA_SHIP_ATTR): string {
+  return `<script>document.addEventListener("click",function(e){var t=e.target&&e.target.closest?e.target.closest("[${attrName}]"):null;if(!t)return;e.preventDefault();var u=${JSON.stringify(url)};if(t.getAttribute("target")==="_blank"){window.open(u,"_blank","noopener,noreferrer");}else{window.location.href=u;}});</script>`;
 }
 
 const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:/i;
@@ -575,18 +774,72 @@ function removeAttributeFromNode(ms: TextPatcher, html: string, node: ElementNod
   }
 }
 
+const HOVER_STYLE_MARKER = "data-igle-hover-styles";
+
+/** Escapes a string for use as a literal (non-wildcard) fragment inside a `new RegExp(...)`. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Sets (or clears) one property in the `{ ... }` declaration block of a `#<elementId>:hover` rule
+ * inside a shared stylesheet's text content, preserving every other rule and every other property
+ * already in that same rule — same idea as mergeStyleDeclaration, just for a rule embedded in a
+ * block of CSS text rather than a single inline `style="..."` attribute.
+ */
+function mergeHoverRule(styleBlockContent: string, elementId: string, property: string, value: string): string {
+  const selector = `#${elementId}:hover`;
+  const ruleRegex = new RegExp(`${escapeRegExp(selector)}\\s*\\{([^}]*)\\}`);
+  const match = ruleRegex.exec(styleBlockContent);
+  const currentDeclarations = match ? match[1]! : "";
+  const nextDeclarations = mergeStyleDeclaration(currentDeclarations, property, value);
+  const newRule = `${selector} { ${nextDeclarations} }`;
+  if (!match) {
+    const trimmed = styleBlockContent.trim();
+    return trimmed ? `${trimmed}\n${newRule}` : newRule;
+  }
+  return styleBlockContent.slice(0, match.index) + newRule + styleBlockContent.slice(match.index + match[0]!.length);
+}
+
 /**
  * Applies one or more edits located by node id (from annotateNodesForEditing / ParsedImage.nodeId)
  * in a single pass, so a batch of visual-editor changes lands as one minimal set of splices and
  * one revision. Node ids are resolved by re-walking a fresh parse of the CURRENT file content;
  * if the element can no longer be found the document changed since the editor loaded it.
+ *
+ * setStyle and setHoverStyle both accumulate in memory (pendingInlineStyle / hoverStyleContent)
+ * across every patch in the batch before writing anything, instead of computing each patch's
+ * result from the untouched original HTML the way every other op here does: two patches touching
+ * the same inline `style` attribute (e.g. text color, then background color, saved together) would
+ * otherwise both overwrite the exact same attribute range, and since neither builds on the other,
+ * whichever is processed last would silently win and discard the other's change entirely.
  */
 export function applyStructuralPatches(html: string, patches: StructuralPatch[]): { html: string } {
   const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  attachParents(document);
   const nodesById = new Map<number, ElementNode>();
   walkElementsWithId(document, (node, id) => nodesById.set(id, node));
 
   const ms = new TextPatcher(html);
+  const pendingInlineStyle = new Map<number, string>();
+  const ensuredElementIds = new Map<number, string>();
+  let hoverStyleTag: ElementNode | undefined;
+  let hoverStyleTagLoaded = false;
+  let hoverStyleContent = "";
+
+  function ensureElementId(target: ElementNode, nodeId: number): string {
+    const already = ensuredElementIds.get(nodeId);
+    if (already) return already;
+    const existing = attr(target, "id");
+    const resolvedId = existing ?? `igle-el-${nodeId}`;
+    if (!existing) {
+      const insertPos = startTagInsertOffset(target);
+      if (insertPos !== undefined) ms.appendLeft(insertPos, ` id="${escapeHtmlAttribute(resolvedId)}"`);
+    }
+    ensuredElementIds.set(nodeId, resolvedId);
+    return resolvedId;
+  }
+
   for (const patch of patches) {
     const target = nodesById.get(patch.nodeId);
     if (!target) {
@@ -641,19 +894,105 @@ export function applyStructuralPatches(html: string, patches: StructuralPatch[])
       continue;
     }
 
+    if (patch.op === "moveUp" || patch.op === "moveDown") {
+      const location = target.sourceCodeLocation;
+      if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be moved.", 422);
+      // Swaps this element's outer HTML with its adjacent ELEMENT sibling's — text/whitespace
+      // siblings in between are skipped and left exactly where they are. Two non-overlapping
+      // range overwrites achieve the same result as an actual reorder without needing to touch
+      // anything else in the document.
+      const elementSiblings = (target.parentNode?.childNodes ?? []).filter((node) => Boolean(node.tagName));
+      const index = elementSiblings.indexOf(target);
+      const swapWith = patch.op === "moveUp" ? elementSiblings[index - 1] : elementSiblings[index + 1];
+      const swapLocation = swapWith?.sourceCodeLocation;
+      if (!swapWith || !swapLocation) continue; // already first/last among its siblings — nothing to do
+      const targetHtml = html.slice(location.startOffset, location.endOffset);
+      const swapHtml = html.slice(swapLocation.startOffset, swapLocation.endOffset);
+      ms.overwrite(location.startOffset, location.endOffset, swapHtml);
+      ms.overwrite(swapLocation.startOffset, swapLocation.endOffset, targetHtml);
+      continue;
+    }
+
+    if (patch.op === "wrapInAnchor") {
+      const location = target.sourceCodeLocation;
+      if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be marked as an affiliate link.", 422);
+      const outerHtml = html.slice(location.startOffset, location.endOffset);
+      const slot = patch.value?.trim() || "default";
+      const wrapper = `<a data-igle-cta="${escapeHtmlAttribute(slot)}" href="#" target="_blank" rel="sponsored nofollow noopener noreferrer">${outerHtml}</a>`;
+      ms.overwrite(location.startOffset, location.endOffset, wrapper);
+      continue;
+    }
+
+    if (patch.op === "unwrapAnchor") {
+      const parent = target.parentNode;
+      const parentLocation = parent?.sourceCodeLocation;
+      if (!parent || parent.tagName !== "a" || attr(parent, "data-igle-cta") === undefined || !parentLocation) {
+        throw new IgleError(
+          "UNWRAP_MISMATCH",
+          "This element's affiliate-link wrapper couldn't be found — it may have been hand-edited. Remove it via Edit as HTML instead.",
+          409
+        );
+      }
+      const elementChildren = (parent.childNodes ?? []).filter((node) => Boolean(node.tagName));
+      if (elementChildren.length !== 1 || elementChildren[0] !== target) {
+        throw new IgleError(
+          "UNWRAP_MISMATCH",
+          "This element's affiliate-link wrapper contains other content and can't be automatically unwrapped — remove it via Edit as HTML instead.",
+          409
+        );
+      }
+      const location = target.sourceCodeLocation;
+      if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be unmarked.", 422);
+      const innerHtml = html.slice(location.startOffset, location.endOffset);
+      ms.overwrite(parentLocation.startOffset, parentLocation.endOffset, innerHtml);
+      continue;
+    }
+
     if (patch.op === "setStyle") {
       if (!patch.styleProperty) throw new IgleError("INVALID_PATCH", "styleProperty is required for setStyle.", 400);
-      const currentStyle = attr(target, "style") ?? "";
-      const nextStyle = mergeStyleDeclaration(currentStyle, patch.styleProperty, patch.value ?? "");
-      const existing = attrValueRange(target, "style", html);
-      if (existing) {
-        ms.overwrite(existing.start, existing.end, replaceAttributeValue(html.slice(existing.start, existing.end), "style", nextStyle));
-      } else {
-        const insertPos = startTagInsertOffset(target);
-        if (insertPos === undefined) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be styled.", 422);
-        ms.appendLeft(insertPos, ` style="${escapeHtmlAttribute(nextStyle)}"`);
-      }
+      const base = pendingInlineStyle.get(patch.nodeId) ?? attr(target, "style") ?? "";
+      pendingInlineStyle.set(patch.nodeId, mergeStyleDeclaration(base, patch.styleProperty, withImportant(patch.value)));
       continue;
+    }
+
+    if (patch.op === "setHoverStyle") {
+      if (!patch.styleProperty) throw new IgleError("INVALID_PATCH", "styleProperty is required for setHoverStyle.", 400);
+      if (!hoverStyleTagLoaded) {
+        hoverStyleTag = findElements(document, "style").find((node) => attr(node, HOVER_STYLE_MARKER) !== undefined);
+        const range = hoverStyleTag ? innerRange(hoverStyleTag) : undefined;
+        hoverStyleContent = range ? html.slice(range.start, range.end) : "";
+        hoverStyleTagLoaded = true;
+      }
+      const elementId = ensureElementId(target, patch.nodeId);
+      hoverStyleContent = mergeHoverRule(hoverStyleContent, elementId, patch.styleProperty, withImportant(patch.value));
+      continue;
+    }
+  }
+
+  for (const [nodeId, nextStyle] of pendingInlineStyle) {
+    const target = nodesById.get(nodeId)!;
+    const existing = attrValueRange(target, "style", html);
+    if (existing) {
+      ms.overwrite(existing.start, existing.end, replaceAttributeValue(html.slice(existing.start, existing.end), "style", nextStyle));
+    } else {
+      const insertPos = startTagInsertOffset(target);
+      if (insertPos !== undefined) ms.appendLeft(insertPos, ` style="${escapeHtmlAttribute(nextStyle)}"`);
+    }
+  }
+
+  if (hoverStyleTagLoaded) {
+    if (hoverStyleTag) {
+      const range = innerRange(hoverStyleTag);
+      if (range) ms.overwrite(range.start, range.end, hoverStyleContent);
+    } else {
+      // Inserted as the very last thing in <body> (not <head>) deliberately: every other element's
+      // node-order id comes before it in document order, so creating this tag for the first time
+      // never shifts any other element's id — only elements structurally after the insertion point
+      // do, and nothing else is. Placement in the document has no effect on whether the CSS rule
+      // applies; browsers treat a <style> in <body> the same as one in <head>.
+      const bodyNode = findElements(document, "body")[0];
+      const insertion = bodyNode?.sourceCodeLocation?.endTag?.startOffset;
+      if (insertion !== undefined) ms.appendLeft(insertion, `<style ${HOVER_STYLE_MARKER}="1">${hoverStyleContent}</style>`);
     }
   }
 
@@ -714,9 +1053,13 @@ function attr(node: ElementNode | undefined, name: string): string | undefined {
 }
 
 function isInsideBody(node: ElementNode): boolean {
+  return isInsideTag(node, "body");
+}
+
+function isInsideTag(node: ElementNode, tagName: string): boolean {
   let current: ElementNode | undefined = node.parentNode;
   while (current) {
-    if (current.tagName === "body") return true;
+    if (current.tagName === tagName) return true;
     current = current.parentNode;
   }
   return false;
@@ -872,6 +1215,19 @@ function applySingletonAttribute(
   const snippet = `${lineEnding}  ${emptyElement.replace(`${attrName}=""`, `${attrName}="${escapeHtmlAttribute(value)}"`)}`;
   ms.appendLeft(insertion, snippet);
   patches.push({ start: insertion, end: insertion });
+}
+
+/**
+ * Appends `!important` to a non-empty style value before it's merged into an inline `style="..."`
+ * attribute or a `:hover` rule — an inline declaration already beats any *normal*-priority CSS
+ * rule, but real templates commonly mark button/CTA colors `!important` in their own stylesheet,
+ * which would otherwise still win over a plain visual-editor override. An empty value (property
+ * being cleared, not set) is left alone — mergeStyleDeclaration/mergeHoverRule both treat that as
+ * "delete this property," which "!important" would only get in the way of.
+ */
+function withImportant(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? "" : `${trimmed} !important`;
 }
 
 /** Sets one property in an inline `style="..."` value, preserving every other declaration already there. */

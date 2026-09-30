@@ -12,6 +12,7 @@ export type RevisionSource =
   | "code-editor"
   | "file-manager"
   | "page-duplicate"
+  | "page-create"
   | "page-delete"
   | "page-restore"
   | "page-purge"
@@ -104,7 +105,8 @@ export interface CoreState {
   teamPasswordUpdatedAt?: string | undefined;
   /**
    * Where traffic goes, per country (2-letter ISO code, e.g. "BR", "MX") — set by an
-   * administrator. Storage only for now: nothing reads or applies these to site content yet.
+   * administrator, and used as the fallback in AffiliateLinkService.resolveForSite whenever a site
+   * has no affiliateLinkOverride of its own. Read by the public `/api/r/[siteId]` redirect route.
    */
   affiliateLinks?: Record<string, string> | undefined;
   /** ISO timestamp of the last weekly task-archive sweep (see TaskService.runWeeklyArchiveSweepIfDue) — lets the worker tell it's already run today without a second store. */

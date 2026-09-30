@@ -311,6 +311,11 @@ button.button {
   color: #fff;
 }
 
+.segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -924,17 +929,18 @@ select:disabled {
 
 .preview-frame {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .preview-frame-toolbar {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 5;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 4px;
@@ -972,7 +978,7 @@ select:disabled {
 
 .preview-frame-body {
   width: 100%;
-  height: 100%;
+  flex: 1;
   min-height: 0;
   min-width: 0;
   display: flex;
@@ -1010,14 +1016,9 @@ select:disabled {
 .preview-frame:fullscreen {
   height: 100vh;
   aspect-ratio: unset;
-  padding: 44px 16px 16px;
+  padding: 16px;
   box-sizing: border-box;
   background: var(--panel);
-}
-
-.preview-frame:fullscreen .preview-frame-toolbar {
-  top: 12px;
-  right: 16px;
 }
 
 /* ===== Login page ===== */
@@ -1113,4 +1114,141 @@ select:disabled {
   .visual-editor-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== Rich text editor (TipTap) — "Edit as HTML" modal's Rich text tab ===== */
+
+.rich-text-editor {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.rich-text-toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 4px;
+  background: var(--line);
+}
+
+.rich-text-toolbar-button {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.rich-text-toolbar-button:hover:not(:disabled) {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.rich-text-toolbar-button.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rich-text-toolbar-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rich-text-editor-content {
+  min-height: 320px;
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.rich-text-editor-content:focus {
+  outline: none;
+}
+
+.rich-text-editor-content > :first-child {
+  margin-top: 0;
+}
+
+.rich-text-editor-content > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-editor-content h1,
+.rich-text-editor-content h2,
+.rich-text-editor-content h3 {
+  line-height: 1.25;
+  margin: 1.2em 0 0.5em;
+}
+
+.rich-text-editor-content p {
+  margin: 0.6em 0;
+}
+
+.rich-text-editor-content ul,
+.rich-text-editor-content ol {
+  padding-left: 1.4em;
+  margin: 0.6em 0;
+}
+
+.rich-text-editor-content blockquote {
+  margin: 0.8em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
+}
+
+.rich-text-editor-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--bg);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+.rich-text-editor-content a {
+  color: var(--accent);
+}
+
+.rich-text-editor-content hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.2em 0;
+}
+
+.rich-text-editor-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+}
+
+.rich-text-editor-content th,
+.rich-text-editor-content td {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.rich-text-editor-content th {
+  background: var(--bg);
+  font-weight: 600;
 }

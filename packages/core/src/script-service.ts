@@ -1,5 +1,6 @@
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { affiliateClickScript } from "@igle/html-engine";
 import { assertCan, IgleError, scriptsMetadataSchema, type Actor } from "@igle/shared";
 import { readJson, writeJson } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
@@ -14,6 +15,7 @@ export interface ScriptInput {
   enabled?: boolean;
   pages?: { mode: "all" | "selected" | "patterns"; paths?: string[]; patterns?: string[] };
   owner?: string;
+  protected?: boolean;
 }
 
 export interface ScriptRecord {
@@ -25,6 +27,7 @@ export interface ScriptRecord {
   enabled: boolean;
   pages: { mode: "all" | "selected" | "patterns"; paths: string[]; patterns: string[] };
   owner?: string | undefined;
+  protected?: boolean | undefined;
 }
 
 const gaPreset = (measurementId: string): string =>
@@ -33,7 +36,7 @@ const gaPreset = (measurementId: string): string =>
 const gtmPreset = (containerId: string): string =>
   `<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${containerId}');</script>`;
 
-export const scriptPresets = { gaPreset, gtmPreset };
+export const scriptPresets = { gaPreset, gtmPreset, affiliateClickScript };
 
 export class ScriptService {
   constructor(private readonly revisionService: RevisionService) {}
@@ -70,7 +73,8 @@ export class ScriptService {
         paths: input.pages?.paths ?? [],
         patterns: input.pages?.patterns ?? []
       },
-      owner: input.owner
+      owner: input.owner,
+      protected: input.protected ?? false
     });
     await writeJson(filePath, metadata);
     const revision = await this.revisionService.commitRevision({
@@ -80,6 +84,28 @@ export class ScriptService {
       user: { id: actor.id, name: actor.email, email: actor.email }
     });
     return { revisionNumber: revision.revisionNumber, scriptId };
+  }
+
+  /**
+   * Cleans up the auto-provisioned "Affiliate link redirect" script an earlier version of this
+   * feature used to install per site (a stored, protected ScriptRecord that redirected through a
+   * CMS-hosted `/api/r/[siteId]` lookup at click time). That architecture was replaced — the click
+   * script is now generated fresh at Deploy build time with the real destination baked directly in
+   * (see @igle/build's bakeAffiliateLinks), so nothing needs to be stored per site anymore. Called
+   * from SiteService.rescanAffiliateCtas as a one-time migration for any site that still has the
+   * old entry; a no-op once it's gone. Bypasses the normal `protected` delete guard since this is
+   * the intentional removal of a now-obsolete internal entry, not a user-initiated delete.
+   */
+  async removeLegacyAffiliateCloakScript(site: SiteRecord, actor: Actor): Promise<boolean> {
+    assertCan(actor, "sites.integrations", site.id);
+    assertSiteEditable(site);
+    const filePath = path.join(site.repoPath, ".igle", "scripts.json");
+    const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
+    const remaining = metadata.scripts.filter((script) => !(script.protected && script.name === "Affiliate link redirect (managed automatically)"));
+    if (remaining.length === metadata.scripts.length) return false;
+    metadata.scripts = remaining;
+    await writeJson(filePath, metadata);
+    return true;
   }
 
   async setEnabled(site: SiteRecord, scriptId: string, enabled: boolean, actor: Actor): Promise<{ revisionNumber: number }> {
@@ -107,6 +133,9 @@ export class ScriptService {
     const metadata = scriptsMetadataSchema.parse(await readJson(filePath).catch(() => ({ scripts: [] })));
     const script = metadata.scripts.find((item) => item.id === scriptId);
     if (!script) throw new IgleError("SCRIPT_NOT_FOUND", "Script was not found.", 404);
+    if (script.protected) {
+      throw new IgleError("SCRIPT_PROTECTED", "This script is managed automatically and can't be deleted.", 409);
+    }
     metadata.scripts = metadata.scripts.filter((item) => item.id !== scriptId);
     await writeJson(filePath, metadata);
     const revision = await this.revisionService.commitRevision({

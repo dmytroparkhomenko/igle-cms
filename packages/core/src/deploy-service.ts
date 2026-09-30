@@ -11,6 +11,7 @@ import {
   type CloudPanelConfig
 } from "@igle/deployer";
 import { assertCan, effectiveSiteLanguageTag, IgleError, type Actor } from "@igle/shared";
+import { AffiliateLinkService } from "./affiliate-link-service.js";
 import { RevisionService } from "./revision-service.js";
 import { ServerService } from "./server-service.js";
 import { assertSiteEditable } from "./site-guard.js";
@@ -46,7 +47,8 @@ export class DeployService {
     private readonly dataDir: string,
     private readonly stateStore: JsonStateStore,
     private readonly revisionService: RevisionService,
-    private readonly serverService: ServerService
+    private readonly serverService: ServerService,
+    private readonly affiliateLinkService: AffiliateLinkService
   ) {}
 
   /** Resolves and permission-checks the server a site is assigned to. Throws a clear, specific error at every failure point. */
@@ -159,20 +161,26 @@ export class DeployService {
       partner && partner.metadata.domain
         ? { baseUrl: productionBaseUrl(partner)!, languageTag: effectiveSiteLanguageTag(partner.metadata) }
         : undefined;
+    // Resolved once per deploy and baked directly into the build's click-redirect script (see
+    // @igle/build's bakeAffiliateLinks) — never looked up again at click time, so a real visitor's
+    // browser never touches the CMS (see IGLE-14). Changing the link takes effect on this site's
+    // *next* deploy, not instantly; that trade is the point.
+    const affiliateLinkUrl = await this.affiliateLinkService.resolveForSite(site);
 
     if (site.metadata.deploymentTarget === "aapanel") {
       const server = await this.resolveServerForDeploy(site, actor);
-      if (server.kind === "cloudpanel") return this.deployToCloudPanel(site, revision, server, actor, hreflangPartner);
-      return this.deployToAaPanel(site, revision, server, actor, hreflangPartner);
+      if (server.kind === "cloudpanel") return this.deployToCloudPanel(site, revision, server, actor, hreflangPartner, affiliateLinkUrl);
+      return this.deployToAaPanel(site, revision, server, actor, hreflangPartner, affiliateLinkUrl);
     }
-    return this.deployLocally(site, revision, actor, hreflangPartner);
+    return this.deployLocally(site, revision, actor, hreflangPartner, affiliateLinkUrl);
   }
 
   private async deployLocally(
     site: SiteRecord,
     revision: SiteRevisionRecord,
     actor: Actor,
-    hreflangPartner?: { baseUrl: string; languageTag: string }
+    hreflangPartner?: { baseUrl: string; languageTag: string },
+    affiliateLinkUrl?: string
   ): Promise<DeploymentRecord> {
     const buildsRoot = path.join(this.dataDir, "builds");
     const baseUrl = productionBaseUrl(site);
@@ -182,7 +190,8 @@ export class DeployService {
       commitSha: revision.commitSha,
       buildsRoot,
       ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
-      ...(hreflangPartner ? { hreflangPartner } : {})
+      ...(hreflangPartner ? { hreflangPartner } : {}),
+      ...(affiliateLinkUrl ? { affiliateLinkUrl } : {})
     });
 
     const buildIssues = summarizeIssues(result.issues);
@@ -244,7 +253,8 @@ export class DeployService {
     revision: SiteRevisionRecord,
     server: ServerRecord,
     actor: Actor,
-    hreflangPartner?: { baseUrl: string; languageTag: string }
+    hreflangPartner?: { baseUrl: string; languageTag: string },
+    affiliateLinkUrl?: string
   ): Promise<DeploymentRecord> {
     if (!site.metadata.domain) {
       throw new IgleError("DOMAIN_REQUIRED", "Set a domain in this site's settings before deploying to a VPS.", 400);
@@ -259,7 +269,8 @@ export class DeployService {
       commitSha: revision.commitSha,
       buildsRoot,
       ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
-      ...(hreflangPartner ? { hreflangPartner } : {})
+      ...(hreflangPartner ? { hreflangPartner } : {}),
+      ...(affiliateLinkUrl ? { affiliateLinkUrl } : {})
     });
 
     const buildIssues = summarizeIssues(result.issues);
@@ -342,7 +353,8 @@ export class DeployService {
     revision: SiteRevisionRecord,
     server: ServerRecord,
     actor: Actor,
-    hreflangPartner?: { baseUrl: string; languageTag: string }
+    hreflangPartner?: { baseUrl: string; languageTag: string },
+    affiliateLinkUrl?: string
   ): Promise<DeploymentRecord> {
     if (!site.metadata.domain) {
       throw new IgleError("DOMAIN_REQUIRED", "Set a domain in this site's settings before deploying to a VPS.", 400);
@@ -357,7 +369,8 @@ export class DeployService {
       commitSha: revision.commitSha,
       buildsRoot,
       ...(baseUrl ? { productionBaseUrl: baseUrl } : {}),
-      ...(hreflangPartner ? { hreflangPartner } : {})
+      ...(hreflangPartner ? { hreflangPartner } : {}),
+      ...(affiliateLinkUrl ? { affiliateLinkUrl } : {})
     });
 
     const buildIssues = summarizeIssues(result.issues);

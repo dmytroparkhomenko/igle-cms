@@ -1,12 +1,17 @@
 import { assertCan, IgleError, type Actor } from "@igle/shared";
 import { JsonStateStore } from "./state-store.js";
+import type { SiteRecord } from "./types.js";
 
 const COUNTRY_PATTERN = /^[a-z]{2}$/i;
 
 /**
- * Where traffic should go, per country — administrator-set, storage only for now. Nothing in
- * the build/deploy/render pipeline reads or applies these to site content yet; this exists so
- * the value has a durable, access-controlled home while that decision is made separately.
+ * Where traffic should go, per country (administrator-set) — and, per site, an optional override
+ * that takes priority (see resolveForSite). Resolved once by DeployService right before each
+ * Deploy and baked directly into that build's click-redirect script (see @igle/build's
+ * bakeAffiliateLinks) — deliberately not looked up live at click time: routing a real visitor's
+ * click through the CMS's own server would tie every managed site's traffic back to one shared,
+ * fingerprintable origin (see IGLE-14). The trade-off is that changing either the country default
+ * or a site's override only takes effect on that site's *next Deploy*, not instantly.
  */
 export class AffiliateLinkService {
   constructor(private readonly stateStore: JsonStateStore) {}
@@ -15,6 +20,21 @@ export class AffiliateLinkService {
     assertCan(actor, "integrations.configure");
     const state = await this.stateStore.read();
     return { ...state.affiliateLinks };
+  }
+
+  /**
+   * The actual click destination for this site's cloaked CTAs: its own override if set, else the
+   * country-level default for `site.metadata.country`, else undefined (no destination configured —
+   * callers should fail safe, not throw). No `actor`/permission check: called internally by
+   * DeployService during a build, not from a request a user makes directly.
+   */
+  async resolveForSite(site: SiteRecord): Promise<string | undefined> {
+    const override = site.metadata.affiliateLinkOverride?.trim();
+    if (override) return override;
+    const country = site.metadata.country?.trim().toUpperCase();
+    if (!country) return undefined;
+    const state = await this.stateStore.read();
+    return state.affiliateLinks?.[country];
   }
 
   async set(country: string, url: string, actor: Actor): Promise<void> {

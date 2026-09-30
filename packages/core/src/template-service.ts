@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { parsePageSEO } from "@igle/html-engine";
+import { parsePageSEO, tagAffiliateCtas } from "@igle/html-engine";
 import { renderTemplateHtml, validateTemplateManifest, type TemplateManifest, type TemplatePageType } from "@igle/templates";
 import { assertCan, effectiveSiteLanguageTag, IgleError, matchesSiteLanguage, type Actor, type SiteMetadata } from "@igle/shared";
-import { ensureIgleMetadata } from "./metadata-store.js";
+import { ensureIgleMetadata, readPagesMetadata, writePagesMetadata } from "./metadata-store.js";
 import { RevisionService } from "./revision-service.js";
+import { assertSiteEditable } from "./site-guard.js";
 import { JsonStateStore, id } from "./state-store.js";
 import type { PageIndexRecord, SiteRecord } from "./types.js";
 import { extractZipBuffer } from "./zip-extract.js";
@@ -50,6 +51,8 @@ export interface UploadTemplateReport {
   pagesFound: number;
   assetsFound: number;
   rejectedFiles: Array<{ path: string; reason: string }>;
+  /** How many CTA links (dead-href buttons, rel="sponsored" anchors, aff-link-classed anchors, etc.) tagAffiliateCtas auto-detected and neutralized across all pages — visibility into what "out of the box" cloaking actually found. */
+  ctaLinksTagged: number;
 }
 
 export class TemplateService {
@@ -183,12 +186,14 @@ export class TemplateService {
         fields: fieldValues
       });
 
+      const taggedHtml = tagAffiliateCtas(html).html;
+
       const filePath = routeToFilePath(pageType.route);
       const absolutePath = path.join(repoPath, filePath);
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-      await fs.writeFile(absolutePath, html, "utf8");
+      await fs.writeFile(absolutePath, taggedHtml, "utf8");
 
-      const parsed = parsePageSEO(html);
+      const parsed = parsePageSEO(taggedHtml);
       pages.push({
         id: id("page"),
         siteId,
@@ -218,7 +223,7 @@ export class TemplateService {
         imagesCount: parsed.imagesCount,
         imagesMissingAlt: parsed.imagesMissingAlt,
         inSitemap: true,
-        fileHash: hash(html),
+        fileHash: hash(taggedHtml),
         auditIssues: parsed.issues
       });
     }
@@ -264,6 +269,129 @@ export class TemplateService {
     });
 
     return site;
+  }
+
+  /** Page types from this site's own source template that aren't currently instantiated as a live page — the pool "Add page" offers alongside duplicating an existing page. Empty for a site with no templateKey (an import, say) or whose template no longer resolves. */
+  async availablePageTypes(site: SiteRecord): Promise<TemplatePageType[]> {
+    if (!site.metadata.templateKey) return [];
+    const manifest = await this.loadManifest(site.metadata.templateKey).catch(() => undefined);
+    if (!manifest) return [];
+    const state = await this.stateStore.read();
+    const usedRoutes = new Set(state.pages.filter((page) => page.siteId === site.id && !page.deletedAt).map((page) => page.route));
+    return manifest.pageTypes.filter((pageType) => !usedRoutes.has(pageType.route));
+  }
+
+  /**
+   * Adds one page type from the site's original template that isn't already in use — reuses the
+   * exact same per-page rendering as createSite's loop above (renderTemplateHtml + tagAffiliateCtas
+   * + parsePageSEO), just for a single page type instead of all of them.
+   */
+  async instantiatePageType(site: SiteRecord, pageTypeKey: string, actor: Actor): Promise<{ revisionNumber: number; page: PageIndexRecord }> {
+    assertCan(actor, "sites.edit", site.id);
+    assertSiteEditable(site);
+    if (!site.metadata.templateKey) throw new IgleError("TEMPLATE_NOT_FOUND", "This site has no source template.", 400);
+
+    let manifest: TemplateManifest;
+    try {
+      manifest = await this.loadManifest(site.metadata.templateKey);
+    } catch {
+      throw new IgleError("TEMPLATE_NOT_FOUND", `Template "${site.metadata.templateKey}" was not found.`, 404);
+    }
+    const pageType = manifest.pageTypes.find((item) => item.key === pageTypeKey);
+    if (!pageType) throw new IgleError("PAGE_TYPE_NOT_FOUND", "This page type was not found on the site's template.", 404);
+
+    const available = await this.availablePageTypes(site);
+    if (!available.some((item) => item.key === pageTypeKey)) {
+      throw new IgleError("PAGE_TYPE_ALREADY_USED", "This page type is already used on this site.", 409);
+    }
+
+    const { dir: templateDir } = await this.resolveTemplateDir(site.metadata.templateKey);
+    const source = await fs.readFile(path.join(templateDir, site.metadata.templateKey, pageType.file), "utf8");
+    const fieldValues = Object.fromEntries(pageType.fields.map((field) => [field.key, field.default ?? ""]));
+    const rendered = renderTemplateHtml(source, {
+      site: { name: site.metadata.name, locale: site.metadata.locale, language: site.metadata.language },
+      page: { seoTitle: pageType.seoTitle ?? site.metadata.name, metaDescription: pageType.metaDescription ?? "" },
+      fields: fieldValues
+    });
+    const html = tagAffiliateCtas(rendered).html;
+
+    const filePath = routeToFilePath(pageType.route);
+    const absolutePath = path.join(site.repoPath, filePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    await fs.writeFile(absolutePath, html, "utf8");
+
+    const effectiveLang = effectiveSiteLanguageTag(site.metadata);
+    const parsed = parsePageSEO(html);
+    const newPage: PageIndexRecord = {
+      id: id("page"),
+      siteId: site.id,
+      filePath,
+      route: pageType.route,
+      internalName: pageType.name,
+      seoTitle: parsed.seoTitle.value,
+      metaDescription: parsed.metaDescription.value,
+      h1: parsed.h1.value,
+      canonical: parsed.canonical.value,
+      robots: parsed.robots.value,
+      lang: parsed.lang,
+      ogTitle: parsed.ogTitle.value,
+      ogDescription: parsed.ogDescription.value,
+      fieldStates: {
+        seoTitle: parsed.seoTitle.state,
+        metaDescription: parsed.metaDescription.state,
+        h1: parsed.h1.state,
+        canonical: parsed.canonical.state,
+        robots: parsed.robots.state,
+        ogTitle: parsed.ogTitle.state,
+        ogDescription: parsed.ogDescription.state,
+        lang: parsed.lang === undefined ? "absent" : matchesSiteLanguage(parsed.lang, effectiveLang) ? "inherited" : "explicit"
+      },
+      h1Count: parsed.h1Count,
+      wordCount: parsed.wordCount,
+      imagesCount: parsed.imagesCount,
+      imagesMissingAlt: parsed.imagesMissingAlt,
+      inSitemap: true,
+      fileHash: hash(html),
+      auditIssues: parsed.issues
+    };
+
+    const pagesMetadata = await readPagesMetadata(site.repoPath);
+    pagesMetadata.pages.push({
+      id: newPage.id,
+      filePath: newPage.filePath,
+      route: newPage.route,
+      internalName: newPage.internalName,
+      inSitemap: newPage.inSitemap,
+      fieldStates: {
+        seoTitle: newPage.fieldStates.seoTitle ?? "absent",
+        metaDescription: newPage.fieldStates.metaDescription ?? "absent",
+        h1: newPage.fieldStates.h1 ?? "absent",
+        canonical: newPage.fieldStates.canonical ?? "absent",
+        robots: newPage.fieldStates.robots ?? "absent",
+        ogTitle: newPage.fieldStates.ogTitle ?? "absent",
+        ogDescription: newPage.fieldStates.ogDescription ?? "absent"
+      },
+      lastWrittenHashes: {}
+    });
+    await writePagesMetadata(site.repoPath, pagesMetadata);
+
+    await this.stateStore.update((state) => {
+      state.pages.push(newPage);
+    });
+
+    const revision = await this.revisionService.commitRevision({
+      site,
+      source: "page-create",
+      title: `Added page "${pageType.name}" from template`,
+      user: { id: actor.id, name: actor.email, email: actor.email }
+    });
+
+    await this.stateStore.update((state) => {
+      const record = state.pages.find((item) => item.id === newPage.id);
+      if (record) record.lastRevisionId = revision.id;
+    });
+
+    return { revisionNumber: revision.revisionNumber, page: newPage };
   }
 
   /**
@@ -337,6 +465,7 @@ export class TemplateService {
 
       await fs.mkdir(path.join(targetDir, "pages"), { recursive: true });
 
+      let ctaLinksTagged = 0;
       const pageTypes: TemplatePageType[] = [];
       for (const page of pages) {
         let html = await fs.readFile(path.join(sourceRoot, page.originPath), "utf8");
@@ -344,6 +473,10 @@ export class TemplateService {
         if (input.sourceDomain) html = stripSourceDomain(html, input.sourceDomain);
         const { html: templatizedHtml, seo } = templatizeSeo(html);
         html = templatizedHtml;
+
+        const ctaResult = tagAffiliateCtas(html);
+        html = ctaResult.html;
+        ctaLinksTagged += ctaResult.count;
 
         const fields: TemplatePageType["fields"] = [];
         if (input.brandName?.trim()) {
@@ -389,7 +522,8 @@ export class TemplateService {
         key,
         pagesFound: pages.length,
         assetsFound,
-        rejectedFiles: zipReport.rejectedFiles
+        rejectedFiles: zipReport.rejectedFiles,
+        ctaLinksTagged
       };
     } finally {
       await fs.rm(stagingDir, { recursive: true, force: true });

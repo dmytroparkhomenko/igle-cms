@@ -13,6 +13,9 @@
   "dependencies": {
     "@igle/core": "workspace:*",
     "@igle/shared": "workspace:*",
+    "@tiptap/extension-table": "^3.0.0",
+    "@tiptap/react": "^3.0.0",
+    "@tiptap/starter-kit": "^3.0.0",
     "next": "^15.5.3",
     "qrcode": "^1.5.4",
     "react": "^19.1.1",

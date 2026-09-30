@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { CloudflareAccountService, DomainService, JsonStateStore, RevisionService, ServerService, SiteService, id } from "@igle/core";
+import { CloudflareAccountService, DomainService, JsonStateStore, RevisionService, ScriptService, ServerService, SiteService, id } from "@igle/core";
 import type { Actor } from "@igle/shared";
 
 const admin: Actor = { id: "admin", email: "admin@example.com", role: "administrator" };
@@ -12,7 +12,8 @@ describe("DomainService.assignToSite", () => {
     const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "igle-test-"));
     const stateStore = new JsonStateStore(dataDir);
     const revisionService = new RevisionService(stateStore);
-    const siteService = new SiteService(dataDir, stateStore, revisionService);
+    const scriptService = new ScriptService(revisionService);
+    const siteService = new SiteService(dataDir, stateStore, revisionService, scriptService);
     const cloudflareAccountService = new CloudflareAccountService(stateStore);
     const serverService = new ServerService(stateStore);
     const domainService = new DomainService(stateStore, cloudflareAccountService, serverService, siteService);
