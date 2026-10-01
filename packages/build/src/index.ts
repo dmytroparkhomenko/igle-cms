@@ -179,11 +179,11 @@ async function injectScripts(
  * Converts every authoring-time `data-igle-cta` marker to the shipped `data-go` attribute (see
  * CTA_SHIP_ATTR), and — only when `url` is provided — appends one click-redirect script per page
  * with that URL baked directly in (see affiliateClickScript). Also strips every *other* leftover
- * `data-igle-*` authoring marker (see stripResidualAuthoringMarkers) — e.g. the hover-style
- * `<style>` tag's own marker, written directly into a page's saved HTML the moment hover styling
- * is ever used, with nothing else that ever cleans it up. Both the rename and the strip always run
- * regardless of `url` or whether a page has any CTAs at all: it's what keeps scanFootprint clean
- * for every page, not just ones actively using the affiliate or hover features right now.
+ * `data-igle-*` authoring marker in KNOWN_RESIDUAL_MARKER_ATTRS (see stripResidualAuthoringMarkers)
+ * — the hover-style `<style>` tag's own marker, and `data-igle-node` on any page saved before a fix
+ * stopped it leaking into saved content in the first place. Both the rename and the strip always
+ * run regardless of `url` or whether a page has any CTAs at all: it's what keeps scanFootprint
+ * clean for every page, not just ones actively using the affiliate or hover features right now.
  */
 async function finalizeAuthoringMarkup(buildPath: string, url: string | undefined): Promise<void> {
   const htmlFiles = (await listFiles(buildPath)).filter((filePath) => [".html", ".htm"].includes(path.extname(filePath).toLowerCase()));

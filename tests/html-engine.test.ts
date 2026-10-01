@@ -221,6 +221,15 @@ describe("applyStructuralPatches", () => {
     expect(result.html).toContain("background-color: #00ff00");
   });
 
+  it("strips data-igle-node from a setInnerHtml value — regression: this leaked from the preview bridge's raw innerHTML capture (Edit as HTML, double-click text edits with nested children) straight into saved files, permanently failing every future deploy", () => {
+    const html = '<div id="node">old</div>';
+    const result = applyStructuralPatches(html, [
+      { nodeId: 3, op: "setInnerHtml", value: '<p data-igle-node="12">Hello <a data-igle-node="13" href="/x">link</a></p>' }
+    ]);
+    expect(result.html).not.toContain("data-igle-node");
+    expect(result.html).toContain("<p>Hello <a href=\"/x\">link</a></p>");
+  });
+
   it("creates a hover stylesheet and assigns a generated id when the element has none", () => {
     const html = "<html><head></head><body><button>Buy</button></body></html>";
     const result = applyStructuralPatches(html, [{ nodeId: 3, op: "setHoverStyle", styleProperty: "background-color", value: "#111111" }]);
@@ -341,6 +350,13 @@ describe("stripResidualAuthoringMarkers", () => {
     expect(result.html).not.toContain("data-igle-hover-styles");
     expect(result.html).toContain("#x:hover { color: red }");
     expect(result.html).toContain("<style");
+  });
+
+  it("strips a leaked data-igle-node marker — unblocks a site saved before sanitizeInlineHtml stopped this from happening to new saves", () => {
+    const html = '<p data-igle-node="12">Hello <a data-igle-node="13" href="/x">link</a></p>';
+    const result = stripResidualAuthoringMarkers(html);
+    expect(result.count).toBe(2);
+    expect(result.html).toBe('<p>Hello <a href="/x">link</a></p>');
   });
 
   it("leaves an unrecognized data-igle-* marker alone — this is an allowlist, not a blanket strip, so an unexpected leak still trips the footprint scanner instead of being silently hidden", () => {

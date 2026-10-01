@@ -777,23 +777,27 @@ function removeAttributeFromNode(ms: TextPatcher, html: string, node: ElementNod
 const HOVER_STYLE_MARKER = "data-igle-hover-styles";
 
 /**
- * data-igle-* markers that legitimately end up written into a page's saved HTML as part of normal,
- * working CMS behavior — not a leak or a bug — and so need cleaning up before a build ships, not
- * flagged as a footprint violation. Currently just HOVER_STYLE_MARKER: the shared hover-styles
- * `<style>` tag's own marker attribute, written directly into a page's file by
- * applyStructuralPatches' setHoverStyle handling purely so a *later* edit can re-find that same
- * tag — confirmed the real cause of a site failing every future deploy ("Forbidden CMS marker
- * data-igle- found") the moment hover styling was ever used on it once, since nothing stripped it
- * before the footprint scan. `data-igle-cta` isn't here: it's handled separately, by renaming (not
- * stripping) to the shipped `data-go` attribute, since it's still needed at click time.
+ * data-igle-* markers this cleans up before a build ships, instead of letting them block the
+ * build as a footprint violation. Two different reasons something ends up here:
+ *  - HOVER_STYLE_MARKER: *intentionally* written into a page's saved HTML by applyStructuralPatches'
+ *    setHoverStyle handling, purely so a later edit can re-find the same shared `<style>` tag — not
+ *    a bug, just bookkeeping with no purpose once the page is actually shipped.
+ *  - "data-igle-node": *not* intentional — a real, now-fixed bug (see sanitizeInlineHtml) let the
+ *    preview-only node-id marker leak into saved content via "Edit as HTML" or double-click text
+ *    edits on anything with nested child elements, confirmed the cause of a site failing every
+ *    deploy. sanitizeInlineHtml stops this from happening to any *new* save; this entry exists
+ *    purely to unblock sites whose already-saved files were contaminated before that fix landed —
+ *    kept here rather than requiring everyone affected to hand-edit every page through the code
+ *    editor first.
+ * `data-igle-cta` isn't here: it's handled separately, by renaming (not stripping) to the shipped
+ * `data-go` attribute, since it's still needed at click time.
  *
  * Deliberately an explicit allowlist, not "strip anything starting with data-igle-": an unexpected
- * marker reaching here (e.g. a real leak of the preview-only data-igle-node, which should never
- * exist outside the editor bridge) is exactly the kind of accidental-CMS-footprint bug
- * scanFootprint exists to catch — this cleans up known, intentional bookkeeping without quietly
- * defeating that safety net for anything actually unexpected.
+ * marker reaching here that isn't one of these two known, now-understood cases is exactly the kind
+ * of accidental-CMS-footprint bug scanFootprint exists to catch — this cleans up specific, known
+ * cases without quietly defeating that safety net for anything genuinely new and unexpected.
  */
-const KNOWN_RESIDUAL_MARKER_ATTRS = new Set([HOVER_STYLE_MARKER]);
+const KNOWN_RESIDUAL_MARKER_ATTRS = new Set([HOVER_STYLE_MARKER, "data-igle-node"]);
 
 /** Strips every attribute in KNOWN_RESIDUAL_MARKER_ATTRS from the final build output — see that
  * constant for which markers these are and why. Run unconditionally, after any marker-renaming
@@ -1043,12 +1047,25 @@ function startTagInsertOffset(node: ElementNode): number | undefined {
   return loc.startOffset + 1 + node.tagName.length;
 }
 
-/** Minimal safety net for visual-editor text commits: strips executable content, not a full sanitizer. */
+/**
+ * Minimal safety net for visual-editor text commits: strips executable content, not a full
+ * sanitizer. Also strips any `data-igle-*` attribute — the real, confirmed source of a site
+ * failing every deploy with "Forbidden CMS marker data-igle- found": the preview bridge's
+ * `describe(el)`/double-click-commit both hand back `el.innerHTML` verbatim, and *every* element
+ * carries a `data-igle-node` marker in edit mode (see annotateNodesForEditing), including nested
+ * children of whatever was selected — so editing a container ("Edit as HTML") or double-clicking
+ * text that happens to wrap a nested element (a link, a span) captures those markers along with
+ * it, and nothing used to strip them before the value was written straight to the saved file. This
+ * is the single chokepoint every setInnerHtml-based save (double-click text, Edit as HTML, rich
+ * text) already passes through, so fixing it here closes the leak at its source regardless of
+ * which editing surface it came from.
+ */
 function sanitizeInlineHtml(value: string): string {
   return value
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\sdata-igle-[a-z0-9-]*\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
 }
 
 function findElements(root: ElementNode, tagName: string): ElementNode[] {

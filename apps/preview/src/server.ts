@@ -205,6 +205,19 @@ const BRIDGE_SCRIPT = `(function () {
     return parent;
   }
 
+  // Every element carries its own data-igle-node marker in edit mode (see
+  // annotateNodesForEditing), not just whichever one is selected — so a plain el.innerHTML read
+  // includes that marker on any nested child elements too. Used wherever a chunk of innerHTML
+  // is handed back to the parent editor (describe()'s "html" field, the double-click text-edit
+  // commit below) so it never ends up captured in a setInnerHtml patch and written to the saved
+  // file — belt-and-suspenders alongside the server's own stripping in sanitizeInlineHtml.
+  function innerHtmlWithoutNodeMarkers(el) {
+    var clone = el.cloneNode(true);
+    var marked = clone.querySelectorAll("[data-igle-node]");
+    for (var i = 0; i < marked.length; i++) marked[i].removeAttribute("data-igle-node");
+    return clone.innerHTML;
+  }
+
   function describe(el) {
     var ancestors = [];
     var current = el.parentElement ? el.parentElement.closest("[data-igle-node]") : null;
@@ -218,7 +231,7 @@ const BRIDGE_SCRIPT = `(function () {
     return {
       nodeId: Number(el.getAttribute("data-igle-node")),
       tagName: el.tagName.toLowerCase(),
-      html: el.innerHTML,
+      html: innerHtmlWithoutNodeMarkers(el),
       text: el.textContent,
       src: el.getAttribute("src"),
       href: el.getAttribute("href"),
@@ -402,7 +415,7 @@ const BRIDGE_SCRIPT = `(function () {
     el.focus();
     var commit = function () {
       el.removeAttribute("contenteditable");
-      parent.postMessage({ source: "igle-preview", type: "textEdited", nodeId: nodeId, html: el.innerHTML }, "*");
+      parent.postMessage({ source: "igle-preview", type: "textEdited", nodeId: nodeId, html: innerHtmlWithoutNodeMarkers(el) }, "*");
     };
     el.addEventListener("blur", commit, { once: true });
   }
