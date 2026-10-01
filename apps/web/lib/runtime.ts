@@ -2,6 +2,7 @@ import path from "node:path";
 import { AffiliateLinkService } from "../../../packages/core/src/affiliate-link-service";
 import { AuthService } from "../../../packages/core/src/auth-service";
 import { CloudflareAccountService } from "../../../packages/core/src/cloudflare-account-service";
+import { CollabService } from "../../../packages/core/src/collab-service";
 import { DeployService } from "../../../packages/core/src/deploy-service";
 import { DomainService } from "../../../packages/core/src/domain-service";
 import { DraftService } from "../../../packages/core/src/draft-service";
@@ -39,6 +40,7 @@ const seoService = new SEOService(stateStore, revisionService);
 const authService = new AuthService(stateStore);
 const draftService = new DraftService(stateStore);
 const jobService = new JobService(stateStore);
+const collabService = new CollabService();
 const mediaService = new MediaService();
 const pageService = new PageService(stateStore, revisionService);
 const telegramNotifier = new TelegramNotifier(stateStore, webOrigin);
@@ -88,6 +90,7 @@ export const runtime = {
   authService,
   draftService,
   jobService,
+  collabService,
   mediaService,
   pageService,
   taskService,

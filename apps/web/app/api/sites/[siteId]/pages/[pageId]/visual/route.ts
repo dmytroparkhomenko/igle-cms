@@ -17,6 +17,10 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
     }
 
     const result = await runtime.seoService.applyVisualEdits(site, pageId, patches, (await requireActor()));
+    // Everyone currently in this page's real-time collab room (see CollabService) needs to know
+    // the save landed, not just whoever clicked the button — their own pending patches are now
+    // part of the saved content, and their view should reset to it instead of re-applying on top.
+    runtime.collabService.resetRoom(site.id, pageId);
     return NextResponse.json(result);
   } catch (error) {
     const formatted = apiError(error);

@@ -45,6 +45,16 @@ interface NavPage {
   internalName: string;
 }
 
+/** One other browser tab currently editing this same page — see the real-time collab effects
+ * below. `patches` travels with the snapshot (reconciled against the live iframe) but isn't kept
+ * in the presence-bar-facing state, hence the separate narrower view type. */
+interface CollabParticipantView {
+  connectionId: string;
+  name: string;
+  color: string;
+  selectedNodeId?: number;
+}
+
 interface PendingPatch {
   nodeId: number;
   op:
@@ -379,6 +389,35 @@ function matchPageForHref(href: string | null | undefined, pages: NavPage[]): Na
   return pages.find((page) => normalizeRoute(page.route) === normalized);
 }
 
+/** Structural equality for one patch — used to detect whether a remote participant's patch list
+ * grew (common case: they kept editing — replay just the new tail) or changed shape some other
+ * way (they undid/redid/discarded, or I'm seeing them for the first time — needs a full resync). */
+function patchesEqual(a: PendingPatch, b: PendingPatch): boolean {
+  return a.nodeId === b.nodeId && a.op === b.op && a.attrName === b.attrName && a.styleProperty === b.styleProperty && a.value === b.value;
+}
+
+/** What actually gets POSTed to Save once more than one participant can have pending patches at
+ * once: flattening everyone's lists together can put two patches that target the exact same thing
+ * in one batch (two people touching the same element at the same instant) — applyStructuralPatches
+ * computes each patch's source range independently and does not merge conflicting writes to the
+ * same range, so two different values there would corrupt the output, not just silently pick one.
+ * This is what keeps the "last one wins, visibly, never corrupted" promise:
+ *  - a removeNode anywhere for a nodeId wins over anything else queued for that same nodeId — the
+ *    same rule the single-user removeBlock() already applies locally, extended across everyone
+ *  - otherwise, only the last patch for a given (nodeId, op, attrName/styleProperty) survives
+ * Order is otherwise preserved, and this participant's own list is passed last so, in a genuine
+ * same-instant tie, whoever is actually clicking Save wins. */
+function mergePatchesForSave(groups: PendingPatch[][]): PendingPatch[] {
+  const flat = groups.flat();
+  const removedNodeIds = new Set(flat.filter((patch) => patch.op === "removeNode").map((patch) => patch.nodeId));
+  const survivors = flat.filter((patch) => patch.op === "removeNode" || !removedNodeIds.has(patch.nodeId));
+
+  const keyOf = (patch: PendingPatch) => `${patch.nodeId}:${patch.op}:${patch.attrName ?? ""}:${patch.styleProperty ?? ""}`;
+  const lastIndexForKey = new Map<string, number>();
+  survivors.forEach((patch, index) => lastIndexForKey.set(keyOf(patch), index));
+  return survivors.filter((patch, index) => lastIndexForKey.get(keyOf(patch)) === index);
+}
+
 export function VisualEditorClient({
   siteId,
   siteSlug,
@@ -418,6 +457,24 @@ export function VisualEditorClient({
   const [reloadKey, setReloadKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+
+  // Real-time collaboration: a Server-Sent Events feed of who else currently has this page open
+  // in the visual editor and what they've each got queued (not yet saved) — see CollabService and
+  // /api/sites/[siteId]/pages/[pageId]/visual/collab(/sync). `connectionId` identifies me in that
+  // feed once the stream confirms it; `participants` is everyone *else*, for the presence bar.
+  const [connectionId, setConnectionId] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<CollabParticipantView[]>([]);
+  // Lets Save changes stay enabled when a teammate has pending work even if I personally haven't
+  // changed anything — Save commits the room's current shared state, not just my own patches.
+  const [othersHavePending, setOthersHavePending] = useState(false);
+  // Mirrors `patches` for synchronous reads from inside the long-lived SSE listener below, which
+  // (being set up once per mount) would otherwise only ever see the `patches` value from the
+  // render it was created in.
+  const patchesRef = useRef<PendingPatch[]>([]);
+  // What I've already replayed into my own iframe on each other participant's behalf, keyed by
+  // their connectionId — lets each incoming snapshot be diffed ("did they just add more, or did
+  // their list change shape some other way") instead of blindly re-applying everything every time.
+  const remoteAppliedRef = useRef<Map<string, PendingPatch[]>>(new Map());
 
   // The server bakes PREVIEW_ORIGIN from its own env var (typically "http://localhost:3001"),
   // which only resolves correctly if the browser happens to be on the same machine as the
@@ -542,6 +599,124 @@ export function VisualEditorClient({
         break;
     }
   }
+
+  useEffect(() => {
+    patchesRef.current = patches;
+  }, [patches]);
+
+  /** Reconciles one incoming collab snapshot into my own live iframe. For each other participant:
+   * if their patch list just grew (the common case — they kept editing), replay only the new tail
+   * via the same replayPatchToFrame used for my own local edits. Otherwise (their list changed
+   * shape — they undid/redid/discarded — or I'm seeing them for the first time, which covers both
+   * "I just joined mid-session" and "I just reconnected") fall back to the same reload-and-replay
+   * mechanism already built for local undo, feeding it the full current merged state (everyone's
+   * latest patches plus my own still-pending ones) instead of just mine — so a teammate's undo
+   * never costs me my own in-progress work, only a brief refresh. */
+  const reconcileSnapshot = useCallback(
+    (remoteParticipants: Array<CollabParticipantView & { patches: PendingPatch[] }>) => {
+      const others = remoteParticipants.filter((participant) => participant.connectionId !== connectionId);
+      setParticipants(others.map(({ patches: _patches, ...rest }) => rest));
+      setOthersHavePending(others.some((participant) => participant.patches.length > 0));
+
+      let needsFullResync = false;
+      for (const participant of others) {
+        const previous = remoteAppliedRef.current.get(participant.connectionId);
+        if (previous === undefined) {
+          if (participant.patches.length > 0) needsFullResync = true;
+          continue;
+        }
+        const isExtension =
+          participant.patches.length >= previous.length && previous.every((patch, i) => patchesEqual(patch, participant.patches[i]!));
+        if (isExtension) {
+          for (const patch of participant.patches.slice(previous.length)) replayPatchToFrame(patch);
+        } else {
+          needsFullResync = true;
+        }
+      }
+
+      const stillPresent = new Set(others.map((participant) => participant.connectionId));
+      for (const [key, previous] of remoteAppliedRef.current) {
+        if (stillPresent.has(key)) continue;
+        if (previous.length > 0) needsFullResync = true;
+        remoteAppliedRef.current.delete(key);
+      }
+
+      if (needsFullResync) {
+        remoteAppliedRef.current = new Map(others.map((participant) => [participant.connectionId, participant.patches]));
+        replayPatchesRef.current = [...others.flatMap((participant) => participant.patches), ...patchesRef.current];
+        setReloadKey((key) => key + 1);
+      } else {
+        for (const participant of others) remoteAppliedRef.current.set(participant.connectionId, participant.patches);
+      }
+
+      // Every participant (me included, once my own sync catches up) converged to zero pending
+      // patches — someone's save just landed. Reset my own local history too even if I wasn't the
+      // one who clicked Save, so "N unsaved changes" and undo/redo both reflect reality rather
+      // than re-offering to save content that's already on disk.
+      if (remoteParticipants.length > 0 && remoteParticipants.every((participant) => participant.patches.length === 0) && patchesRef.current.length > 0) {
+        setEditHistory({ stack: [[]], index: 0 });
+        setSelected(null);
+        setStatus({ kind: "idle" });
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [connectionId]
+  );
+
+  // reconcileSnapshot is recreated whenever connectionId changes (it closes over it, to exclude
+  // "me" from the participant list) — the SSE connection below is deliberately NOT torn down and
+  // reopened on every one of those changes (that would fight its own `connected` handler, which is
+  // what sets connectionId in the first place), so it reads the latest version through this ref
+  // instead of closing over whatever reconcileSnapshot existed when the connection was opened.
+  const reconcileSnapshotRef = useRef(reconcileSnapshot);
+  useEffect(() => {
+    reconcileSnapshotRef.current = reconcileSnapshot;
+  }, [reconcileSnapshot]);
+
+  // Joins this page's real-time collab room (see CollabService) for as long as the editor is
+  // mounted. EventSource reconnects on its own after a dropped connection — the server treats
+  // that as a fresh join, so `connected` just updates connectionId again; nothing else to do.
+  useEffect(() => {
+    const source = new EventSource(`/api/sites/${siteId}/pages/${pageId}/visual/collab`);
+
+    source.addEventListener("connected", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as { connectionId: string };
+      setConnectionId(data.connectionId);
+    });
+
+    source.addEventListener("snapshot", (event) => {
+      const data = JSON.parse((event as MessageEvent).data) as {
+        participants: Array<CollabParticipantView & { patches: PendingPatch[] }>;
+      };
+      reconcileSnapshotRef.current(data.participants);
+    });
+
+    return () => {
+      source.close();
+      setConnectionId(null);
+      setParticipants([]);
+      remoteAppliedRef.current = new Map();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [siteId, pageId]);
+
+  // Tells my room what I currently have pending (debounced, since several of the style controls
+  // above fire on every keystroke/drag) — every other connected tab picks this up via the
+  // `snapshot` listener above and reflects it live.
+  useEffect(() => {
+    if (!connectionId) return;
+    const timer = setTimeout(() => {
+      void fetch(`/api/sites/${siteId}/pages/${pageId}/visual/collab/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId, patches, selectedNodeId: selected?.nodeId })
+      }).catch(() => {
+        // Best-effort — a missed sync just means other tabs see my next change a little later,
+        // never lost data (patches themselves only ever live in my own local state until Save).
+      });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [connectionId, siteId, pageId, patches, selected?.nodeId]);
 
   function handleIframeLoad(): void {
     const toReplay = replayPatchesRef.current;
@@ -735,13 +910,17 @@ export function VisualEditorClient({
   }
 
   async function save() {
-    if (patches.length === 0) return;
+    // Commits the room's current shared state, not just my own patches — anyone present can save
+    // on behalf of everyone, so a teammate's work is never stuck waiting on them personally to
+    // click the button (and never lost if they never do).
+    const merged = mergePatchesForSave([...remoteAppliedRef.current.values(), patches]);
+    if (merged.length === 0) return;
     setStatus({ kind: "saving" });
     try {
       const response = await fetch(`/api/sites/${siteId}/pages/${pageId}/visual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patches })
+        body: JSON.stringify({ patches: merged })
       });
       const body = await parseJsonResponse(response);
       if (!response.ok) throw new Error((body.error as { message?: string } | undefined)?.message ?? "Save failed.");
@@ -877,9 +1056,40 @@ export function VisualEditorClient({
               Interactive mode (scripts run, editing disabled)
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {participants.length > 0 ? (
+                <div style={{ display: "flex", alignItems: "center" }} title={`Also editing: ${participants.map((participant) => participant.name).join(", ")}`}>
+                  {participants.map((participant, index) => (
+                    <span
+                      key={participant.connectionId}
+                      aria-hidden="true"
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: "50%",
+                        background: participant.color,
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "2px solid var(--panel)",
+                        marginLeft: index === 0 ? 0 : -8
+                      }}
+                    >
+                      {participant.name.slice(0, 1).toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               {patches.length > 0 ? (
                 <span className="status">
                   {patches.length} unsaved change{patches.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
+              {othersHavePending ? (
+                <span className="status" title="Someone else has unsaved changes here too — Save changes will include theirs along with yours.">
+                  teammate has pending changes
                 </span>
               ) : null}
               <button
@@ -1122,7 +1332,12 @@ export function VisualEditorClient({
           {interactive ? <p className="muted" style={{ fontSize: 12.5 }}>Turn off interactive mode to select and edit elements.</p> : null}
 
           <div style={{ display: "flex", gap: 8, marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-            <button className="button" type="button" onClick={save} disabled={status.kind === "saving" || patches.length === 0}>
+            <button
+              className="button"
+              type="button"
+              onClick={save}
+              disabled={status.kind === "saving" || (patches.length === 0 && !othersHavePending)}
+            >
               {status.kind === "saving" ? "Saving…" : "Save changes"}
             </button>
             <button
@@ -1281,6 +1496,13 @@ export function VisualEditorClient({
               </dd>
               <dt>Interactive mode</dt>
               <dd>Runs the page&apos;s real scripts so you can click through it normally, but turns off editing — turn it off again to select and edit elements.</dd>
+              <dt>Working with someone else</dt>
+              <dd>
+                If a teammate has this same page open, their colored initial shows up in the toolbar and their edits
+                appear in your preview live, as they make them — not just after they save. Save changes commits
+                everyone&apos;s current changes together, so clicking it never discards what someone else is in the
+                middle of. Undo/redo only ever affects your own edits.
+              </dd>
               <dt>Mark as affiliate link</dt>
               <dd>
                 Only offered on a link, button, or image — never a whole section or other container, since that
