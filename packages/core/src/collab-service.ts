@@ -30,11 +30,13 @@ function roomKey(siteId: string, pageId: string): string {
  * Real-time co-editing for the visual editor — see /api/sites/[siteId]/pages/[pageId]/visual/collab
  * (SSE) and .../collab/sync (POST). A "room" is every browser tab currently editing one page,
  * tracked purely in memory: each participant's own *current, not-yet-saved* patch list, broadcast
- * to everyone else in the room on every change so nobody's unsaved work is ever invisible to — or
- * silently discarded by — anyone else's Save. Rooms are ephemeral and never written to state.json:
- * same "single Node process" assumption site-lock.ts already documents and accepts; a restart just
- * means everyone's live session starts fresh (their own browser-side patches are untouched, since
- * those live client-side until Save).
+ * to everyone else in the room on every change so nobody's unsaved work is ever invisible to
+ * anyone else — each person keeps their own independent stack and can only ever save their own
+ * (see VisualEditorClient.tsx's save()), so one revision is always attributable to exactly one
+ * person, never a merge of several people's work. Rooms are ephemeral and never written to
+ * state.json: same "single Node process" assumption site-lock.ts already documents and accepts; a
+ * restart just means everyone's live session starts fresh (their own browser-side patches are
+ * untouched, since those live client-side until Save).
  */
 export class CollabService {
   private readonly rooms = new Map<string, CollabRoom>();
@@ -72,19 +74,6 @@ export class CollabService {
     if (!participant) return;
     participant.patches = patches;
     participant.selectedNodeId = selectedNodeId;
-    this.emitSnapshot(siteId, pageId);
-  }
-
-  /** Called once a save actually commits — clears every participant's pending patches (the just-saved
-   * content is now the shared baseline) and tells everyone so their own view resets to it, not just
-   * whoever clicked Save. */
-  resetRoom(siteId: string, pageId: string): void {
-    const room = this.rooms.get(roomKey(siteId, pageId));
-    if (!room) return;
-    for (const participant of room.participants.values()) {
-      participant.patches = [];
-      participant.selectedNodeId = undefined;
-    }
     this.emitSnapshot(siteId, pageId);
   }
 

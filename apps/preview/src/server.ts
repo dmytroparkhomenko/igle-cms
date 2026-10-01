@@ -11,6 +11,27 @@ const affiliateLinkService = new AffiliateLinkService(stateStore);
 const app = Fastify({ logger: true });
 
 /**
+ * Set when this service is only reachable through a reverse proxy's path prefix rather than its
+ * own directly-exposed port (e.g. "/preview" when Caddy's `handle_path /preview/*` is the only
+ * public way in — see docker/caddy/Caddyfile) — empty by default, matching local dev, where the
+ * preview service is hit directly on its own port with no prefix at all.
+ *
+ * Route *matching* here never needs to know about this: `handle_path` strips the prefix before
+ * forwarding, so an incoming request already looks exactly like a direct, unprefixed one by the
+ * time it reaches this server (confirmed: `/preview/__igle/bridge.js` through Caddy correctly
+ * reaches the plain `/__igle/bridge.js` route below with zero changes). What *does* need to know
+ * about it is anything this server writes into a response that the browser will later resolve as
+ * an absolute path — those need the prefix baked back in, or the browser's follow-up request for
+ * them skips the proxy's path match entirely and 404s at the root. Confirmed the real cause of
+ * "double-click to edit doesn't work" and "Edit as HTML doesn't apply" in exactly this kind of
+ * deployment: the injected bridge script's own `<script src="/__igle/bridge.js">` resolved to the
+ * domain root, missing the "/preview" prefix, so the browser's own request for the actual bridge
+ * script never reached this server at all — nothing was there to relay postMessage events between
+ * the parent editor and the iframe.
+ */
+const basePath = (process.env.PREVIEW_BASE_PATH ?? "").replace(/\/+$/, "");
+
+/**
  * Same click-redirect script a real deploy bakes in (see @igle/build's bakeAffiliateLinks) —
  * injected here too so marking an element as an affiliate link is actually checkable in the
  * preview, not just after a full deploy. Resolves the destination the same way a deploy does
@@ -123,7 +144,7 @@ app.get("/:siteId/*", async (request, reply) => {
 });
 
 function injectBridge(html: string): string {
-  const tag = '<script src="/__igle/bridge.js"></script>';
+  const tag = `<script src="${basePath}/__igle/bridge.js"></script>`;
   if (/<\/body>/i.test(html)) return html.replace(/<\/body>/i, `${tag}</body>`);
   return `${html}${tag}`;
 }
@@ -143,7 +164,7 @@ function normalizeRoute(route: string): string {
  * rewritten individually rather than treating the whole attribute value as one path.
  */
 function rewriteAbsolutePaths(html: string, siteId: string): string {
-  const prefix = `/${siteId}`;
+  const prefix = `${basePath}/${siteId}`;
   const withSrcAndHref = html.replace(/(\s(?:src|href)=")\/(?!\/)([^"]*)(")/gi, `$1${prefix}/$2$3`);
   return withSrcAndHref.replace(/(\ssrcset=")([^"]*)(")/gi, (_match, open: string, value: string, close: string) => {
     const rewritten = value
@@ -165,6 +186,7 @@ function rewriteAbsolutePaths(html: string, siteId: string): string {
 const BRIDGE_SCRIPT = `(function () {
   "use strict";
   var currentOutline = null;
+  var BASE_PATH = ${JSON.stringify(basePath)};
 
   function target(el) {
     return el && el.closest ? el.closest("[data-igle-node]") : null;
@@ -223,12 +245,17 @@ const BRIDGE_SCRIPT = `(function () {
 
   // Every site is served under /<siteSlug>/ here (see rewriteAbsolutePaths on the server side,
   // which does the equivalent rewrite for HTML sent on a real page load). Derives the slug from
-  // this frame's own URL rather than needing it passed in some other way.
+  // this frame's own URL rather than needing it passed in some other way — stripping BASE_PATH
+  // first when this service is only reachable through a reverse-proxy path prefix, or the slug
+  // segment would be read as whatever that prefix is instead (e.g. "preview") and this would
+  // build a broken image URL instead of a real one.
   function withSitePrefix(value) {
     if (!value || value.charAt(0) !== "/" || value.charAt(1) === "/") return value;
-    var segments = window.location.pathname.split("/");
+    var pathname = window.location.pathname;
+    if (BASE_PATH && pathname.indexOf(BASE_PATH) === 0) pathname = pathname.slice(BASE_PATH.length);
+    var segments = pathname.split("/");
     var sitePrefix = segments.length > 1 && segments[1] ? "/" + segments[1] : "";
-    return sitePrefix + value;
+    return BASE_PATH + sitePrefix + value;
   }
 
   // Rewrites the URL of any srcset candidate exactly matching oldSrc, preserving each

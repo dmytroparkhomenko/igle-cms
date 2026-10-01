@@ -97,6 +97,7 @@ export default async function SiteDetailPage({
     .filter((revision) => revision.siteId === site.id)
     .slice()
     .sort((a, b) => b.revisionNumber - a.revisionNumber);
+  const userEmailById = new Map(state.users.map((user) => [user.id, user.email]));
 
   // Mirroring: the pairing is stored on only the "mirror" side (mirrorOfSiteId points at the
   // "source"), so the partner might be either direction from this site's point of view.
@@ -974,8 +975,11 @@ export default async function SiteDetailPage({
                     className="muted"
                     style={{ margin: "2px 0 0", fontSize: 12.5 }}
                   >
-                    {revision.source} ·{" "}
-                    {new Date(revision.createdAt).toLocaleString()}
+                    {revision.source}
+                    {revision.createdByUserId && userEmailById.has(revision.createdByUserId)
+                      ? ` · ${userEmailById.get(revision.createdByUserId)}`
+                      : ""}{" "}
+                    · {new Date(revision.createdAt).toLocaleString()}
                   </p>
                 </span>
               </summary>

@@ -493,7 +493,23 @@ export function VisualEditorClient({
     }
   }, [previewOriginFallback]);
 
-  const previewUrl = `${previewOrigin}/${siteSlug}${pageRoute}${interactive ? "" : "?igle_edit=1"}`;
+  // A separate path prefix (e.g. "/preview"), kept apart from previewOrigin above since
+  // postMessage's targetOrigin/event.origin are always strictly protocol+host+port, never a path
+  // — mixing a path into previewOrigin would break the origin check entirely. Only set when the
+  // preview service isn't directly reachable on its own port and is instead proxied behind a path
+  // prefix on the web app's own origin (see PREVIEW_BASE_PATH in .env.example and
+  // apps/preview/src/server.ts) — empty, and this is a no-op, for the default direct-port setup.
+  // Purely server-configured, so (unlike previewOrigin) it never needs correcting against the
+  // browser's own location — computed once, matching SSR.
+  const [previewBasePath] = useState(() => {
+    try {
+      return new URL(previewOriginFallback).pathname.replace(/\/+$/, "");
+    } catch {
+      return "";
+    }
+  });
+
+  const previewUrl = `${previewOrigin}${previewBasePath}/${siteSlug}${pageRoute}${interactive ? "" : "?igle_edit=1"}`;
   const richTextAvailable = useMemo(() => canUseRichText(htmlDraft), [htmlDraft]);
   useEffect(() => {
     if (htmlEditorTab === "rich" && !richTextAvailable) setHtmlEditorTab("raw");
@@ -607,11 +623,14 @@ export function VisualEditorClient({
   /** Reconciles one incoming collab snapshot into my own live iframe. For each other participant:
    * if their patch list just grew (the common case — they kept editing), replay only the new tail
    * via the same replayPatchToFrame used for my own local edits. Otherwise (their list changed
-   * shape — they undid/redid/discarded — or I'm seeing them for the first time, which covers both
-   * "I just joined mid-session" and "I just reconnected") fall back to the same reload-and-replay
-   * mechanism already built for local undo, feeding it the full current merged state (everyone's
-   * latest patches plus my own still-pending ones) instead of just mine — so a teammate's undo
-   * never costs me my own in-progress work, only a brief refresh. */
+   * shape — they undid, redid, discarded, or *saved*, which empties their list the same way — or
+   * I'm seeing them for the first time, covering both "I just joined mid-session" and "I just
+   * reconnected") fall back to the same reload-and-replay mechanism already built for local undo,
+   * feeding it the full current merged state (everyone's latest patches plus my own still-pending
+   * ones) instead of just mine — so nothing a teammate does, save included, ever costs me my own
+   * in-progress work, only a brief refresh. Each participant's own patches are only ever cleared by
+   * their own save() or discard() (see those), never by this function — a teammate's save must
+   * never silently clear or affect my own pending stack. */
   const reconcileSnapshot = useCallback(
     (remoteParticipants: Array<CollabParticipantView & { patches: PendingPatch[] }>) => {
       const others = remoteParticipants.filter((participant) => participant.connectionId !== connectionId);
@@ -647,16 +666,6 @@ export function VisualEditorClient({
         setReloadKey((key) => key + 1);
       } else {
         for (const participant of others) remoteAppliedRef.current.set(participant.connectionId, participant.patches);
-      }
-
-      // Every participant (me included, once my own sync catches up) converged to zero pending
-      // patches — someone's save just landed. Reset my own local history too even if I wasn't the
-      // one who clicked Save, so "N unsaved changes" and undo/redo both reflect reality rather
-      // than re-offering to save content that's already on disk.
-      if (remoteParticipants.length > 0 && remoteParticipants.every((participant) => participant.patches.length === 0) && patchesRef.current.length > 0) {
-        setEditHistory({ stack: [[]], index: 0 });
-        setSelected(null);
-        setStatus({ kind: "idle" });
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -910,17 +919,19 @@ export function VisualEditorClient({
   }
 
   async function save() {
-    // Commits the room's current shared state, not just my own patches — anyone present can save
-    // on behalf of everyone, so a teammate's work is never stuck waiting on them personally to
-    // click the button (and never lost if they never do).
-    const merged = mergePatchesForSave([...remoteAppliedRef.current.values(), patches]);
-    if (merged.length === 0) return;
+    // Only ever my own patches — each participant in a shared editing session keeps their own
+    // independent stack and can only save it themselves (see CollabService), so a revision is
+    // always attributable to exactly the one person who made it, never a merge of several
+    // people's work landing under whoever happened to click Save first. mergePatchesForSave still
+    // runs as a safety net against any internal duplicate targeting the same thing twice.
+    const toSave = mergePatchesForSave([patches]);
+    if (toSave.length === 0) return;
     setStatus({ kind: "saving" });
     try {
       const response = await fetch(`/api/sites/${siteId}/pages/${pageId}/visual`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patches: merged })
+        body: JSON.stringify({ patches: toSave })
       });
       const body = await parseJsonResponse(response);
       if (!response.ok) throw new Error((body.error as { message?: string } | undefined)?.message ?? "Save failed.");
@@ -1088,7 +1099,7 @@ export function VisualEditorClient({
                 </span>
               ) : null}
               {othersHavePending ? (
-                <span className="status" title="Someone else has unsaved changes here too — Save changes will include theirs along with yours.">
+                <span className="status" title="Someone else has unsaved changes here too — you'll see them live, but only they can save their own.">
                   teammate has pending changes
                 </span>
               ) : null}
@@ -1332,12 +1343,7 @@ export function VisualEditorClient({
           {interactive ? <p className="muted" style={{ fontSize: 12.5 }}>Turn off interactive mode to select and edit elements.</p> : null}
 
           <div style={{ display: "flex", gap: 8, marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-            <button
-              className="button"
-              type="button"
-              onClick={save}
-              disabled={status.kind === "saving" || (patches.length === 0 && !othersHavePending)}
-            >
+            <button className="button" type="button" onClick={save} disabled={status.kind === "saving" || patches.length === 0}>
               {status.kind === "saving" ? "Saving…" : "Save changes"}
             </button>
             <button
@@ -1499,9 +1505,10 @@ export function VisualEditorClient({
               <dt>Working with someone else</dt>
               <dd>
                 If a teammate has this same page open, their colored initial shows up in the toolbar and their edits
-                appear in your preview live, as they make them — not just after they save. Save changes commits
-                everyone&apos;s current changes together, so clicking it never discards what someone else is in the
-                middle of. Undo/redo only ever affects your own edits.
+                appear in your preview live, as they make them — not just after they save. Each of you keeps your own
+                separate stack of changes: Save changes only ever saves <em>your own</em> edits, as its own revision
+                under your own name — never a teammate&apos;s, and a teammate saving never discards or affects
+                anything you&apos;re still working on. Undo/redo also only ever affects your own edits.
               </dd>
               <dt>Mark as affiliate link</dt>
               <dd>

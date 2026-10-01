@@ -37,6 +37,17 @@ export function PreviewImage({
     }
   }, [originFallback]);
 
+  // A path prefix (e.g. "/preview") when the preview service is only reachable that way, not on
+  // its own directly-exposed port — see the matching note in VisualEditorClient.tsx. Purely
+  // server-configured, so computed once rather than corrected against the browser's own location.
+  const [basePath] = useState(() => {
+    try {
+      return new URL(originFallback).pathname.replace(/\/+$/, "");
+    } catch {
+      return "";
+    }
+  });
+
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={`${origin}${path}`} alt={alt} className={className} style={style} width={width} height={height} loading={loading} />;
+  return <img src={`${origin}${basePath}${path}`} alt={alt} className={className} style={style} width={width} height={height} loading={loading} />;
 }

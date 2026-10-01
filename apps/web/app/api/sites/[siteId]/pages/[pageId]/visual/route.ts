@@ -16,11 +16,13 @@ export async function POST(request: Request, context: { params: Promise<{ siteId
       throw new IgleError("VALIDATION_ERROR", "Every patch requires a valid nodeId.", 400);
     }
 
+    // Each participant in this page's real-time collab room (see CollabService) saves only their
+    // own stack of pending patches, attributed to whoever is actually signed in and posting this
+    // request (see applyVisualEdits -> commitRevision's `user`) — one revision per person's own
+    // save, never a combined one. Nothing here needs to touch anyone else's room state: a save
+    // only ever clears the saving participant's own entry, which the client already announces
+    // through the normal /collab/sync flow once its own patches are cleared locally.
     const result = await runtime.seoService.applyVisualEdits(site, pageId, patches, (await requireActor()));
-    // Everyone currently in this page's real-time collab room (see CollabService) needs to know
-    // the save landed, not just whoever clicked the button — their own pending patches are now
-    // part of the saved content, and their view should reset to it instead of re-applying on top.
-    runtime.collabService.resetRoom(site.id, pageId);
     return NextResponse.json(result);
   } catch (error) {
     const formatted = apiError(error);

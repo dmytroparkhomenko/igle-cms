@@ -67,29 +67,20 @@ describe("CollabService", () => {
     expect(service.snapshot("site_1", "page_2").participants).toHaveLength(0);
   });
 
-  it("resetRoom clears every participant's patches and notifies subscribers", () => {
+  it("each participant keeps their own independent stack — syncing one never touches another's", () => {
     const service = new CollabService();
     const { connectionId: a } = service.join("site_1", "page_1", userA);
     const { connectionId: b } = service.join("site_1", "page_1", userB);
     service.sync("site_1", "page_1", a, [{ nodeId: 1, op: "setAttr", attrName: "src", value: "x" }], undefined);
     service.sync("site_1", "page_1", b, [{ nodeId: 2, op: "setAttr", attrName: "src", value: "y" }], undefined);
 
-    let lastSnapshot = service.snapshot("site_1", "page_1");
-    expect(lastSnapshot.participants.every((p) => p.patches.length === 0)).toBe(false);
+    // B clearing their own stack (e.g. after their own save) must leave A's completely untouched.
+    service.sync("site_1", "page_1", b, [], undefined);
 
-    const seen: unknown[] = [];
-    const unsubscribe = service.subscribe("site_1", "page_1", (snapshot) => seen.push(snapshot));
-    service.resetRoom("site_1", "page_1");
-    unsubscribe();
-
-    expect(seen).toHaveLength(1);
-    lastSnapshot = service.snapshot("site_1", "page_1");
-    expect(lastSnapshot.participants).toHaveLength(2);
-    expect(lastSnapshot.participants.every((p) => p.patches.length === 0)).toBe(true);
-  });
-
-  it("resetRoom on a room with no participants is a harmless no-op", () => {
-    const service = new CollabService();
-    expect(() => service.resetRoom("site_x", "page_x")).not.toThrow();
+    const snapshot = service.snapshot("site_1", "page_1");
+    const aEntry = snapshot.participants.find((p) => p.connectionId === a);
+    const bEntry = snapshot.participants.find((p) => p.connectionId === b);
+    expect(aEntry?.patches).toEqual([{ nodeId: 1, op: "setAttr", attrName: "src", value: "x" }]);
+    expect(bEntry?.patches).toEqual([]);
   });
 });

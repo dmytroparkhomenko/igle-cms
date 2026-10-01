@@ -31,8 +31,19 @@ export function PreviewLink({
     }
   }, [originFallback]);
 
+  // A path prefix (e.g. "/preview") when the preview service is only reachable that way, not on
+  // its own directly-exposed port — see the matching note in VisualEditorClient.tsx. Purely
+  // server-configured, so computed once rather than corrected against the browser's own location.
+  const [basePath] = useState(() => {
+    try {
+      return new URL(originFallback).pathname.replace(/\/+$/, "");
+    } catch {
+      return "";
+    }
+  });
+
   return (
-    <a href={`${origin}${path}`} target="_blank" rel="noreferrer" className={className} style={style}>
+    <a href={`${origin}${basePath}${path}`} target="_blank" rel="noreferrer" className={className} style={style}>
       {children}
     </a>
   );
