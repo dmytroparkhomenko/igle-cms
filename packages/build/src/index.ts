@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
-import { affiliateClickScript, CTA_SHIP_ATTR, renameCtaAttribute } from "@igle/html-engine";
+import { affiliateClickScript, CTA_SHIP_ATTR, renameCtaAttribute, stripResidualAuthoringMarkers } from "@igle/html-engine";
 import { effectiveSiteLanguageTag, scriptsMetadataSchema, validatePagesMetadata, validateSiteMetadata } from "@igle/shared";
 
 export interface FootprintIssue {
@@ -70,10 +70,10 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   const scripts = scriptsMetadataSchema.parse(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/scripts.json"));
 
   await injectScripts(buildPath, scripts.scripts.filter((script) => script.enabled && ["production", "both"].includes(script.environment)));
-  // Always runs, even with no affiliateLinkUrl: renaming data-igle-cta -> data-go has to happen
-  // unconditionally, or an untagged-but-marked site would still ship the internal marker and trip
-  // scanFootprint below (which rejects any leftover "data-igle-" token in build output).
-  await bakeAffiliateLinks(buildPath, input.affiliateLinkUrl);
+  // Always runs, regardless of affiliateLinkUrl or whether any authoring markers are even present:
+  // leaving any data-igle-* marker (CTA tags, the hover-style <style> tag, ...) in the shipped
+  // output trips scanFootprint below (which rejects any leftover "data-igle-" token).
+  await finalizeAuthoringMarkup(buildPath, input.affiliateLinkUrl);
   if (site.sitemap.enabled) {
     await writeSitemap(buildPath, site, pages.pages, input.productionBaseUrl, input.repoPath, input.commitSha);
   }
@@ -178,11 +178,14 @@ async function injectScripts(
 /**
  * Converts every authoring-time `data-igle-cta` marker to the shipped `data-go` attribute (see
  * CTA_SHIP_ATTR), and — only when `url` is provided — appends one click-redirect script per page
- * with that URL baked directly in (see affiliateClickScript). The rename always runs regardless of
- * `url`: it's what keeps scanFootprint clean even for a site with tagged CTAs but no affiliate
- * link configured yet.
+ * with that URL baked directly in (see affiliateClickScript). Also strips every *other* leftover
+ * `data-igle-*` authoring marker (see stripResidualAuthoringMarkers) — e.g. the hover-style
+ * `<style>` tag's own marker, written directly into a page's saved HTML the moment hover styling
+ * is ever used, with nothing else that ever cleans it up. Both the rename and the strip always run
+ * regardless of `url` or whether a page has any CTAs at all: it's what keeps scanFootprint clean
+ * for every page, not just ones actively using the affiliate or hover features right now.
  */
-async function bakeAffiliateLinks(buildPath: string, url: string | undefined): Promise<void> {
+async function finalizeAuthoringMarkup(buildPath: string, url: string | undefined): Promise<void> {
   const htmlFiles = (await listFiles(buildPath)).filter((filePath) => [".html", ".htm"].includes(path.extname(filePath).toLowerCase()));
   for (const filePath of htmlFiles) {
     const absolutePath = path.join(buildPath, filePath);
@@ -192,6 +195,7 @@ async function bakeAffiliateLinks(buildPath: string, url: string | undefined): P
     if (renamed.count > 0 && url) {
       html = injectScript(html, "body-end", affiliateClickScript(url, CTA_SHIP_ATTR));
     }
+    html = stripResidualAuthoringMarkers(html).html;
     if (html !== original) await fs.writeFile(absolutePath, html, "utf8");
   }
 }

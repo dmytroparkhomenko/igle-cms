@@ -8,6 +8,7 @@ import {
   parsePageSEO,
   renameCtaAttribute,
   replaceImageSrcEverywhere,
+  stripResidualAuthoringMarkers,
   tagAffiliateCtas
 } from "@igle/html-engine";
 import { IgleError } from "@igle/shared";
@@ -329,6 +330,36 @@ describe("findTaggedCtaLinks", () => {
 
   it("returns an empty list when nothing is tagged", () => {
     expect(findTaggedCtaLinks('<a href="/about">About</a>')).toHaveLength(0);
+  });
+});
+
+describe("stripResidualAuthoringMarkers", () => {
+  it("strips the hover-style marker attribute, leaving the <style> tag and its rules intact", () => {
+    const html = '<html><head></head><body><style data-igle-hover-styles="1">#x:hover { color: red }</style><button id="x">Buy</button></body></html>';
+    const result = stripResidualAuthoringMarkers(html);
+    expect(result.count).toBe(1);
+    expect(result.html).not.toContain("data-igle-hover-styles");
+    expect(result.html).toContain("#x:hover { color: red }");
+    expect(result.html).toContain("<style");
+  });
+
+  it("leaves an unrecognized data-igle-* marker alone — this is an allowlist, not a blanket strip, so an unexpected leak still trips the footprint scanner instead of being silently hidden", () => {
+    const html = '<div data-igle-unexpected-future-marker="1">content</div>';
+    const result = stripResidualAuthoringMarkers(html);
+    expect(result.count).toBe(0);
+    expect(result.html).toBe(html);
+  });
+
+  it("leaves data-go (the shipped, renamed attribute) alone — only data-igle-* is stripped", () => {
+    const html = '<a data-go="default" href="#">Buy</a>';
+    const result = stripResidualAuthoringMarkers(html);
+    expect(result.count).toBe(0);
+    expect(result.html).toBe(html);
+  });
+
+  it("is a no-op when nothing carries a data-igle-* attribute", () => {
+    const html = "<a href=\"/about\">About</a>";
+    expect(stripResidualAuthoringMarkers(html)).toEqual({ html, count: 0 });
   });
 });
 

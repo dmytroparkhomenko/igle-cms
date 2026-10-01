@@ -776,6 +776,44 @@ function removeAttributeFromNode(ms: TextPatcher, html: string, node: ElementNod
 
 const HOVER_STYLE_MARKER = "data-igle-hover-styles";
 
+/**
+ * data-igle-* markers that legitimately end up written into a page's saved HTML as part of normal,
+ * working CMS behavior — not a leak or a bug — and so need cleaning up before a build ships, not
+ * flagged as a footprint violation. Currently just HOVER_STYLE_MARKER: the shared hover-styles
+ * `<style>` tag's own marker attribute, written directly into a page's file by
+ * applyStructuralPatches' setHoverStyle handling purely so a *later* edit can re-find that same
+ * tag — confirmed the real cause of a site failing every future deploy ("Forbidden CMS marker
+ * data-igle- found") the moment hover styling was ever used on it once, since nothing stripped it
+ * before the footprint scan. `data-igle-cta` isn't here: it's handled separately, by renaming (not
+ * stripping) to the shipped `data-go` attribute, since it's still needed at click time.
+ *
+ * Deliberately an explicit allowlist, not "strip anything starting with data-igle-": an unexpected
+ * marker reaching here (e.g. a real leak of the preview-only data-igle-node, which should never
+ * exist outside the editor bridge) is exactly the kind of accidental-CMS-footprint bug
+ * scanFootprint exists to catch — this cleans up known, intentional bookkeeping without quietly
+ * defeating that safety net for anything actually unexpected.
+ */
+const KNOWN_RESIDUAL_MARKER_ATTRS = new Set([HOVER_STYLE_MARKER]);
+
+/** Strips every attribute in KNOWN_RESIDUAL_MARKER_ATTRS from the final build output — see that
+ * constant for which markers these are and why. Run unconditionally, after any marker-renaming
+ * step (see finalizeAuthoringMarkup in @igle/build), so using a feature that writes one of these
+ * once doesn't block that page's deploys forever. */
+export function stripResidualAuthoringMarkers(html: string): { html: string; count: number } {
+  const document = parse5.parse(html, { sourceCodeLocationInfo: true }) as unknown as ElementNode;
+  const ms = new TextPatcher(html);
+  let count = 0;
+  visit(document, (node) => {
+    if (!node.tagName) return;
+    for (const attribute of node.attrs ?? []) {
+      if (!KNOWN_RESIDUAL_MARKER_ATTRS.has(attribute.name)) continue;
+      removeAttributeFromNode(ms, html, node, attribute.name);
+      count += 1;
+    }
+  });
+  return { html: ms.toString(), count };
+}
+
 /** Escapes a string for use as a literal (non-wildcard) fragment inside a `new RegExp(...)`. */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

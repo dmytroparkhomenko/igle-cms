@@ -9,6 +9,13 @@ export function PageRow({ siteId, page }: { siteId: string; page: PageIndexRecor
         <p className="muted">{page.route}</p>
       </Link>
       <div className="side muted">{page.seoTitle ? page.seoTitle : "No title"}</div>
+      <Link
+        href={`/sites/${siteId}/pages/${page.id}/visual`}
+        className="button"
+        style={{ background: "none", color: "var(--accent)", fontSize: 12.5, padding: "6px 10px" }}
+      >
+        Edit
+      </Link>
       <form method="post" action={`/api/sites/${siteId}/pages/${page.id}/duplicate`}>
         <button className="button" type="submit" style={{ background: "none", color: "var(--accent)", fontSize: 12.5, padding: "6px 10px" }}>
           Duplicate
