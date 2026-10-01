@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { DeployQueuePanel } from "../../deployments/DeployQueuePanel";
 
 interface DeploymentResult {
   status: "success" | "failed" | "rolled-back";
@@ -55,6 +56,9 @@ export function DeployButton({ siteId, disabled }: { siteId: string; disabled: b
                 <div className="deploy-spinner" aria-hidden="true" />
                 <h3>Deploying…</h3>
                 <p className="muted">Building the site, uploading it, and checking it&apos;s live. This can take a moment.</p>
+                <div style={{ marginTop: 14, textAlign: "left" }}>
+                  <DeployQueuePanel highlightSiteId={siteId} />
+                </div>
               </>
             ) : null}
 

@@ -130,6 +130,65 @@ describe("build pipeline", () => {
     expect(indexHtml).toContain('<link rel="alternate" hreflang="x-default" href="https://example.com/">');
     expect(indexHtml).not.toContain('hreflang="de"');
   });
+
+  it("writes an Apache .htaccess rewriting clean URLs to their .html files, only for urlStyle 'clean'", async () => {
+    const runtime = await testRuntime();
+    const site = await runtime.siteService.createBlankSite({ name: "Clean URL Site", slug: "clean-url-site" }, admin);
+    // createBlankSite already defaults to urlStyle "clean" — confirm the .htaccess is written and
+    // actually rewrites a non-root page (homepage "/" needs no rewrite — Apache's own
+    // DirectoryIndex already resolves it to index.html).
+    const revision1 = await runtime.revisionService.latest(site.id);
+    const cleanResult = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision1!.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds")
+    });
+    const htaccess = await fs.readFile(path.join(cleanResult.buildPath, ".htaccess"), "utf8");
+    expect(htaccess).toContain("RewriteEngine On");
+    expect(htaccess).toContain("RewriteRule ^(.*)$ $1.html [L]");
+
+    await runtime.siteService.updateSettings(site, { urlStyle: "html-ext" }, admin);
+    const revision2 = await runtime.revisionService.latest(site.id);
+    const htExtResult = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision2!.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds")
+    });
+    await expect(fs.access(path.join(htExtResult.buildPath, ".htaccess"))).rejects.toThrow();
+  });
+
+  it("doesn't flag a 'clean' urlStyle internal link as missing just because the file on disk still has .html", async () => {
+    const runtime = await testRuntime();
+    const site = await runtime.siteService.createBlankSite({ name: "Clean Link Site", slug: "clean-link-site" }, admin);
+    await fs.writeFile(
+      path.join(site.repoPath, "index.html"),
+      '<html><body><a href="/about">About</a></body></html>',
+      "utf8"
+    );
+    await fs.writeFile(path.join(site.repoPath, "about.html"), "<html><body>About</body></html>", "utf8");
+    const revision = await runtime.revisionService.commitRevision({ site, source: "code-editor", title: "Clean-style link" });
+    const result = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds")
+    });
+    expect(result.issues.some((issue) => issue.code === "MISSING_ASSET_OR_LINK")).toBe(false);
+
+    // Same link, but html-ext style, where "/about" really is missing (the real file is
+    // about.html) — the fallback must stay scoped to "clean" and not mask a genuine broken link.
+    await runtime.siteService.updateSettings(site, { urlStyle: "html-ext" }, admin);
+    const revision2 = await runtime.revisionService.latest(site.id);
+    const result2 = await buildSite({
+      siteId: site.id,
+      repoPath: site.repoPath,
+      commitSha: revision2!.commitSha,
+      buildsRoot: path.join(runtime.dataDir, "builds")
+    });
+    expect(result2.issues.some((issue) => issue.code === "MISSING_ASSET_OR_LINK")).toBe(true);
+  });
 });
 
 async function testRuntime() {

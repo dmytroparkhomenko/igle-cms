@@ -12,6 +12,7 @@ import {
 } from "@igle/deployer";
 import { assertCan, effectiveSiteLanguageTag, IgleError, type Actor } from "@igle/shared";
 import { AffiliateLinkService } from "./affiliate-link-service.js";
+import { DeployQueueService } from "./deploy-queue-service.js";
 import { RevisionService } from "./revision-service.js";
 import { ServerService } from "./server-service.js";
 import { assertSiteEditable } from "./site-guard.js";
@@ -48,7 +49,8 @@ export class DeployService {
     private readonly stateStore: JsonStateStore,
     private readonly revisionService: RevisionService,
     private readonly serverService: ServerService,
-    private readonly affiliateLinkService: AffiliateLinkService
+    private readonly affiliateLinkService: AffiliateLinkService,
+    private readonly deployQueueService: DeployQueueService
   ) {}
 
   /** Resolves and permission-checks the server a site is assigned to. Throws a clear, specific error at every failure point. */
@@ -129,6 +131,14 @@ export class DeployService {
    */
   async deploy(site: SiteRecord, actor: Actor): Promise<{ deployment: DeploymentRecord; mirror?: { site: SiteRecord; deployment?: DeploymentRecord; error?: string } }> {
     assertCan(actor, "sites.deploy", site.id);
+    // Only one deploy actually runs at a time process-wide — a second trigger waits in line here
+    // rather than racing the first (see DeployQueueService). The request stays open for the whole
+    // wait, same as it always has for the active deploy itself; see GET /api/deployments/queue for
+    // a way to see queue position without blocking on this call.
+    return this.deployQueueService.run(site, actor, () => this.runDeployAndMirror(site, actor));
+  }
+
+  private async runDeployAndMirror(site: SiteRecord, actor: Actor): Promise<{ deployment: DeploymentRecord; mirror?: { site: SiteRecord; deployment?: DeploymentRecord; error?: string } }> {
     const deployment = await this.deployOne(site, actor);
 
     const partner = await this.findMirrorPartner(site);

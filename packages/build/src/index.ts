@@ -68,6 +68,9 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
   const site = validateSiteMetadata(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/site.json"));
   const pages = validatePagesMetadata(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/pages.json"));
   const scripts = scriptsMetadataSchema.parse(await readJsonFromArchive(input.repoPath, input.commitSha, ".igle/scripts.json"));
+  // Runs after removeBuildExcludedFiles (which strips any pre-existing .htaccess carried over from
+  // an import) so this freshly CMS-authored one is always the one that ships.
+  await writeCleanUrlHtaccess(buildPath, site.urlStyle);
 
   await injectScripts(buildPath, scripts.scripts.filter((script) => script.enabled && ["production", "both"].includes(script.environment)));
   // Always runs, regardless of affiliateLinkUrl or whether any authoring markers are even present:
@@ -101,7 +104,7 @@ export async function buildSite(input: BuildSiteInput): Promise<BuildSiteResult>
     await injectHreflang(buildPath, pages.pages, canonicalBase(site, input.productionBaseUrl), effectiveSiteLanguageTag(site), hreflangAlternates);
   }
 
-  const issues = await validateBuild(buildPath);
+  const issues = await validateBuild(buildPath, site.urlStyle);
   const footprintIssues = await scanFootprint(buildPath);
   issues.push(
     ...footprintIssues.map((issue) => ({
@@ -156,6 +159,37 @@ async function removeMatching(root: string, predicate: (filePath: string) => boo
   for (const filePath of await listFiles(root)) {
     if (predicate(filePath)) await fs.rm(path.join(root, filePath), { force: true });
   }
+}
+
+/**
+ * Pages are always written to disk as flat ".html" files (see routeToFilePath in
+ * template-service.ts), but "clean" urlStyle links to them without the extension (e.g. "/about"
+ * instead of "/about.html"). apps/preview resolves that translation itself in code — it looks the
+ * route up against site.pages and serves the matching file — but a real static-file web server has
+ * no idea the CMS's routing table exists. Without this rule every non-root "clean" page 404s once
+ * deployed, even though the exact same link works in preview. "clean-slash" doesn't need this: it
+ * already links to a real directory ("/about/") that the web server's own directory-index behavior
+ * resolves to index.html with no rewrite required, and "html-ext" links already include ".html".
+ *
+ * Apache-only (mod_rewrite via .htaccess) — matches the aaPanel deploy target, which already
+ * assumes an Apache-compatible document root (removeBuildExcludedFiles strips .php/.htaccess for
+ * the same reason). CloudPanel's default static-site nginx ignores .htaccess entirely, so this is a
+ * harmless no-op there rather than a fix — not a regression, just out of scope for this file.
+ */
+async function writeCleanUrlHtaccess(buildPath: string, urlStyle: "html-ext" | "clean" | "clean-slash"): Promise<void> {
+  if (urlStyle !== "clean") return;
+  const htaccess = [
+    "# Managed by Igle CMS. Regenerated on every deploy — do not edit by hand.",
+    "<IfModule mod_rewrite.c>",
+    "  RewriteEngine On",
+    "  RewriteCond %{REQUEST_FILENAME} !-f",
+    "  RewriteCond %{REQUEST_FILENAME} !-d",
+    "  RewriteCond %{REQUEST_FILENAME}\\.html -f",
+    "  RewriteRule ^(.*)$ $1.html [L]",
+    "</IfModule>",
+    ""
+  ].join("\n");
+  await fs.writeFile(path.join(buildPath, ".htaccess"), htaccess, "utf8");
 }
 
 async function injectScripts(
@@ -328,7 +362,7 @@ function canonicalBase(site: { domain?: string | undefined; https: boolean }, pr
   return `${protocol}://${site.domain ?? "example.invalid"}`;
 }
 
-async function validateBuild(buildPath: string): Promise<BuildIssue[]> {
+async function validateBuild(buildPath: string, urlStyle: "html-ext" | "clean" | "clean-slash"): Promise<BuildIssue[]> {
   const issues: BuildIssue[] = [];
   const files = await listFiles(buildPath);
   if (!files.includes("index.html")) {
@@ -339,7 +373,13 @@ async function validateBuild(buildPath: string): Promise<BuildIssue[]> {
     for (const href of [...html.matchAll(/\s(?:href|src)=["']([^"']+)["']/gi)].map((match) => match[1])) {
       if (!href || href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:") || href.startsWith("#")) continue;
       const target = href.startsWith("/") ? href.slice(1) : path.posix.normalize(path.posix.join(path.posix.dirname(filePath), href));
-      if (target && !(await fileExists(path.join(buildPath, target)))) {
+      if (!target) continue;
+      // "clean" urlStyle links omit the ".html" the file actually has on disk (see
+      // writeCleanUrlHtaccess) — check the extensioned path too so a valid clean link isn't flagged.
+      const resolves =
+        (await fileExists(path.join(buildPath, target))) ||
+        (urlStyle === "clean" && !path.extname(target) && (await fileExists(path.join(buildPath, `${target}.html`))));
+      if (!resolves) {
         issues.push({ class: "warning", code: "MISSING_ASSET_OR_LINK", filePath, message: `Referenced file is missing: ${href}` });
       }
     }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { runtime } from "../../lib/runtime";
 import { requireActorOrRedirect } from "../../lib/session";
+import { DeployQueuePanel } from "./DeployQueuePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,10 @@ export default async function DeploymentsPage({
             Show all sites
           </Link>
         ) : null}
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <DeployQueuePanel {...(filteredSite ? { highlightSiteId: filteredSite.id } : {})} />
       </div>
 
       <div className="list" style={{ marginBottom: 28 }}>

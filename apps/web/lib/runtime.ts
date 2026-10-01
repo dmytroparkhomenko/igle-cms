@@ -3,6 +3,7 @@ import { AffiliateLinkService } from "../../../packages/core/src/affiliate-link-
 import { AuthService } from "../../../packages/core/src/auth-service";
 import { CloudflareAccountService } from "../../../packages/core/src/cloudflare-account-service";
 import { CollabService } from "../../../packages/core/src/collab-service";
+import { DeployQueueService } from "../../../packages/core/src/deploy-queue-service";
 import { DeployService } from "../../../packages/core/src/deploy-service";
 import { DomainService } from "../../../packages/core/src/domain-service";
 import { DraftService } from "../../../packages/core/src/draft-service";
@@ -49,7 +50,8 @@ const taskService = new TaskService(dataDir, stateStore, telegramNotifier);
 const notificationService = new NotificationService(stateStore);
 const serverService = new ServerService(stateStore);
 const affiliateLinkService = new AffiliateLinkService(stateStore);
-const deployService = new DeployService(dataDir, stateStore, revisionService, serverService, affiliateLinkService);
+const deployQueueService = new DeployQueueService();
+const deployService = new DeployService(dataDir, stateStore, revisionService, serverService, affiliateLinkService, deployQueueService);
 const cloudflareAccountService = new CloudflareAccountService(stateStore);
 const domainService = new DomainService(stateStore, cloudflareAccountService, serverService, siteService);
 const redirectService = new RedirectService(revisionService);
@@ -96,6 +98,7 @@ export const runtime = {
   taskService,
   notificationService,
   deployService,
+  deployQueueService,
   redirectService,
   scriptService,
   templateService,
