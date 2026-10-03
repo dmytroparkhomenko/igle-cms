@@ -329,11 +329,15 @@ export interface StructuralPatch {
     | "moveUp"
     | "moveDown"
     | "wrapInAnchor"
-    | "unwrapAnchor";
+    | "unwrapAnchor"
+    | "insertHtml";
   attrName?: string;
   value?: string;
   /** For op "setStyle"/"setHoverStyle": the CSS property to set (e.g. "color", "background-color"). */
   styleProperty?: string;
+  /** For op "insertHtml": where to splice `value` relative to `nodeId` — "before"/"after" as a new
+   * sibling, "prepend"/"append" as a new first/last child. */
+  position?: "before" | "after" | "prepend" | "append";
 }
 
 /** Finds the outer HTML of the first `<tagName>` element in a page — used to seed a shared-navigation editor with real current markup. */
@@ -933,6 +937,26 @@ export function applyStructuralPatches(html: string, patches: StructuralPatch[])
       if (!location) throw new IgleError("UNPATCHABLE_NODE", "This element cannot be duplicated.", 422);
       const outerHtml = html.slice(location.startOffset, location.endOffset);
       ms.appendLeft(location.endOffset, outerHtml);
+      continue;
+    }
+
+    // Splices arbitrary new markup in relative to `target` — "before"/"after" are the same shape
+    // as duplicateNode's own insertion point (startOffset/endOffset), "prepend"/"append" reuse
+    // innerRange, the same helper setInnerHtml already relies on. The one new thing duplicateNode
+    // didn't need: sanitizeInlineHtml, since unlike a duplicate (always a byte-for-byte copy of
+    // markup already present and already safe), this value arrives from the client (e.g. a
+    // scanned/copied element's outerHTML) the same way a setInnerHtml edit's value does.
+    if (patch.op === "insertHtml") {
+      const sanitized = sanitizeInlineHtml(patch.value ?? "");
+      if (patch.position === "before" || patch.position === "after") {
+        const location = target.sourceCodeLocation;
+        if (!location) throw new IgleError("UNPATCHABLE_NODE", "Cannot insert content next to this element.", 422);
+        ms.appendLeft(patch.position === "before" ? location.startOffset : location.endOffset, sanitized);
+      } else {
+        const range = innerRange(target);
+        if (!range) throw new IgleError("UNPATCHABLE_NODE", "This element cannot contain inserted content.", 422);
+        ms.appendLeft(patch.position === "prepend" ? range.start : range.end, sanitized);
+      }
       continue;
     }
 

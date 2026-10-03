@@ -218,6 +218,18 @@ const BRIDGE_SCRIPT = `(function () {
     return clone.innerHTML;
   }
 
+  // Same idea as innerHtmlWithoutNodeMarkers but captures the element's own outer HTML (including
+  // its own data-igle-node, which this also strips) — used for the Elements panel's scanned
+  // candidates, where the captured markup becomes an insertHtml patch's value and must be exactly
+  // as clean as any other value that ends up written to the saved file.
+  function outerHtmlWithoutNodeMarkers(el) {
+    var clone = el.cloneNode(true);
+    clone.removeAttribute("data-igle-node");
+    var marked = clone.querySelectorAll("[data-igle-node]");
+    for (var i = 0; i < marked.length; i++) marked[i].removeAttribute("data-igle-node");
+    return clone.outerHTML;
+  }
+
   function describe(el) {
     var ancestors = [];
     var current = el.parentElement ? el.parentElement.closest("[data-igle-node]") : null;
@@ -305,6 +317,69 @@ const BRIDGE_SCRIPT = `(function () {
       label: elementLabel(el),
       children: children
     };
+  }
+
+  // True when 2+ of el's own element siblings (under the same parent) share both its tag name and
+  // its full class string — a strong, template-agnostic signal that el is one instance of a
+  // repeating card/list-item/pricing-tier, regardless of what that template happens to call its
+  // classes. Returns a key scoped to this specific parent (via the parent's own data-igle-node, so
+  // unrelated ".item" groups elsewhere in the page never collide) or null when el isn't part of
+  // such a group at all (no class, or fewer than 2 matching siblings).
+  function siblingGroupKey(el) {
+    var parent = el.parentElement;
+    if (!parent) return null;
+    var cls = el.getAttribute("class");
+    if (!cls) return null;
+    var matches = 0;
+    for (var i = 0; i < parent.children.length; i++) {
+      var sibling = parent.children[i];
+      if (sibling.tagName === el.tagName && sibling.getAttribute("class") === cls) matches++;
+    }
+    return matches >= 2 ? parent.getAttribute("data-igle-node") + "|" + el.tagName + "|" + cls : null;
+  }
+
+  // Tag-semantics-first on purpose — works the same on any uploaded template regardless of its own
+  // class-naming convention, unlike a hardcoded ".btn-primary"-style lookup that would only match
+  // templates happening to use that exact name. "Buttons & links" is deliberately a loose, honest
+  // heuristic (any classed <a>, not just ones that look button-shaped) rather than a guarantee —
+  // candidates carry their real tag+label so the Elements panel lets the user judge for themselves.
+  function reusableCategory(el, repeatGroupKey) {
+    if (/^H[1-6]$/.test(el.tagName)) return "Headings";
+    if (el.tagName === "IMG") return "Images";
+    if (el.tagName === "BUTTON" || (el.tagName === "A" && el.getAttribute("class"))) return "Buttons & links";
+    if (repeatGroupKey) return "Repeating blocks";
+    return null;
+  }
+
+  // Scans for elements worth offering as draggable building blocks in the Elements panel — see
+  // reusableCategory/siblingGroupKey above for the classification rules. Only one representative
+  // per repeating-block group is offered (dragging it in adds one more instance of the pattern,
+  // which is the point); every other category offers every match, since e.g. two different
+  // headings or buttons are rarely "the same thing" the way repeated cards are.
+  function scanReusableElements() {
+    var items = [];
+    var seenRepeatGroups = {};
+    function walk(el) {
+      for (var i = 0; i < el.children.length; i++) {
+        var child = el.children[i];
+        if (child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
+        var repeatGroupKey = siblingGroupKey(child);
+        var category = reusableCategory(child, repeatGroupKey);
+        if (category && !(category === "Repeating blocks" && seenRepeatGroups[repeatGroupKey])) {
+          if (category === "Repeating blocks") seenRepeatGroups[repeatGroupKey] = true;
+          items.push({
+            nodeId: Number(child.getAttribute("data-igle-node")),
+            tagName: child.tagName.toLowerCase(),
+            label: elementLabel(child),
+            category: category,
+            html: outerHtmlWithoutNodeMarkers(child)
+          });
+        }
+        walk(child);
+      }
+    }
+    walk(document.body);
+    return items;
   }
 
   // Every site is served under /<siteSlug>/ here (see rewriteAbsolutePaths on the server side,
@@ -459,6 +534,90 @@ const BRIDGE_SCRIPT = `(function () {
     true
   );
 
+  // Drag-and-drop for the Elements panel: the drag itself originates in the parent document (a
+  // candidate row there), but dragover/drop fire normally on whatever's under the cursor —
+  // including inside this cross-origin iframe — without any special cross-frame wiring needed, so
+  // all the target-resolution logic can live here exactly like click/mouseover already do. The
+  // parent only ever hears about the final drop (see "dropAccepted" below); the live drop
+  // indicator while dragging is handled entirely in this frame, the same way the hover outline is.
+  var dropIndicatorEl = null;
+  var VOID_TAGS = { IMG: true, BR: true, HR: true, INPUT: true, META: true, LINK: true };
+
+  function clearDropIndicator() {
+    if (dropIndicatorEl) {
+      dropIndicatorEl.style.outline = "";
+      dropIndicatorEl.style.outlineOffset = "";
+      dropIndicatorEl = null;
+    }
+  }
+
+  // Top third of the hovered element -> "before" (new sibling above), bottom third -> "after",
+  // middle third -> "append" (new last child) — except on a void element (an <img>, say, which
+  // can't contain children at all), where the middle third falls back to "after" too, so dropping
+  // near one of the Elements panel's own "Images" candidates doesn't land on an UNPATCHABLE_NODE
+  // error from the server for the one case most likely to actually happen in practice.
+  function resolveDropTarget(clientX, clientY) {
+    var el = target(document.elementFromPoint(clientX, clientY));
+    if (!el) return null;
+    var rect = el.getBoundingClientRect();
+    var relativeY = clientY - rect.top;
+    var third = rect.height / 3;
+    var position;
+    if (relativeY < third) position = "before";
+    else if (relativeY > third * 2) position = "after";
+    else position = VOID_TAGS[el.tagName] ? "after" : "append";
+    return { nodeId: Number(el.getAttribute("data-igle-node")), position: position, el: el };
+  }
+
+  // The spec requires preventDefault() on BOTH dragenter and dragover for a drop to be accepted
+  // at all — dragover alone isn't enough; without this, the browser silently refuses every drop
+  // before the dragover handler below ever gets a chance to matter.
+  document.addEventListener(
+    "dragenter",
+    function (e) {
+      e.preventDefault();
+    },
+    true
+  );
+
+  document.addEventListener(
+    "dragover",
+    function (e) {
+      e.preventDefault(); // required for this frame to accept a drop at all
+      var resolved = resolveDropTarget(e.clientX, e.clientY);
+      clearDropIndicator();
+      if (resolved) {
+        resolved.el.style.outline = "2px dashed #2f7d3f";
+        resolved.el.style.outlineOffset = "-1px";
+        dropIndicatorEl = resolved.el;
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    "dragleave",
+    function (e) {
+      // relatedTarget is null when the drag leaves this document entirely (vs. just moving from
+      // one element to another inside it, which dragover above already re-resolves on its own).
+      if (!e.relatedTarget) clearDropIndicator();
+    },
+    true
+  );
+
+  document.addEventListener(
+    "drop",
+    function (e) {
+      e.preventDefault();
+      var resolved = resolveDropTarget(e.clientX, e.clientY);
+      clearDropIndicator();
+      if (resolved) {
+        parent.postMessage({ source: "igle-preview", type: "dropAccepted", nodeId: resolved.nodeId, position: resolved.position }, "*");
+      }
+    },
+    true
+  );
+
   function beginTextEdit(nodeId) {
     var el = document.querySelector('[data-igle-node="' + nodeId + '"]');
     if (!el) return;
@@ -491,6 +650,38 @@ const BRIDGE_SCRIPT = `(function () {
 
     if (msg.type === "getTree") {
       parent.postMessage({ source: "igle-preview", type: "tree", root: buildTree(document.body) }, "*");
+    }
+
+    if (msg.type === "getReusableElements") {
+      parent.postMessage({ source: "igle-preview", type: "reusableElements", items: scanReusableElements() }, "*");
+    }
+
+    if (msg.type === "insertHtml") {
+      var insertTarget = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
+      if (insertTarget && insertTarget.parentNode) {
+        var container = document.createElement("div");
+        container.innerHTML = msg.html;
+        var toInsert = Array.prototype.slice.call(container.childNodes);
+        if (msg.position === "before") {
+          for (var bi = 0; bi < toInsert.length; bi++) insertTarget.parentNode.insertBefore(toInsert[bi], insertTarget);
+        } else if (msg.position === "after") {
+          // Each insert's own reference node advances, so a multi-node payload lands in the same
+          // order it was captured in rather than reversed (insertTarget.nextSibling alone would
+          // re-resolve to whatever was just inserted, putting every following node before it).
+          var afterCursor = insertTarget;
+          for (var ai = 0; ai < toInsert.length; ai++) {
+            insertTarget.parentNode.insertBefore(toInsert[ai], afterCursor.nextSibling);
+            afterCursor = toInsert[ai];
+          }
+        } else if (msg.position === "prepend") {
+          // Reference captured once, before the loop starts, for the same reason as "after" above
+          // — re-reading insertTarget.firstChild on every iteration would reverse the order.
+          var prependRef = insertTarget.firstChild;
+          for (var pi = 0; pi < toInsert.length; pi++) insertTarget.insertBefore(toInsert[pi], prependRef);
+        } else {
+          for (var ci = 0; ci < toInsert.length; ci++) insertTarget.appendChild(toInsert[ci]);
+        }
+      }
     }
 
     if (msg.type === "removeNode") {

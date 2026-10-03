@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PreviewFrame } from "../../../../../PreviewFrame";
+import { ElementsPanel } from "./ElementsPanel";
 import { LayersPanel } from "./LayersPanel";
 import { RichTextEditor, canUseRichText } from "./RichTextEditor";
 
@@ -55,14 +56,6 @@ export interface NavPage {
   internalName: string;
 }
 
-/** A site other than the current one, for the Layers panel's site switcher — deliberately slim
- * compared to SiteRecord, since all the switcher needs is something to list and link to. */
-export interface NavSite {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 /** One page's full element structure for the Layers panel — see the bridge's buildTree(). Node ids
  * are only valid for the snapshot they came from (see walkElementsWithId on the server), so this is
  * always re-requested after a structural edit rather than patched incrementally on the client. */
@@ -73,11 +66,22 @@ export interface TreeNode {
   children: TreeNode[];
 }
 
+/** One candidate the bridge's scanReusableElements() found on the current page — see
+ * ElementsPanel.tsx. `html` is the captured outerHTML, already stripped of data-igle-node markers,
+ * ready to drop straight into an "insertHtml" patch's value. */
+export interface ReusableElement {
+  nodeId: number;
+  tagName: string;
+  label: string;
+  category: string;
+  html: string;
+}
+
 /** Structural ops that can add/remove elements or otherwise shift which node id refers to what —
  * after any of these, the Layers tree is stale and must be re-fetched (see postToFrame below).
  * setInnerHtml is included even though it targets one existing node: Edit-as-HTML and double-click
  * text commits can add or remove child elements, not just change text. */
-const TREE_INVALIDATING_OPS = new Set(["setInnerHtml", "removeNode", "duplicateNode", "moveUp", "moveDown", "wrapInAnchor", "unwrapAnchor"]);
+const TREE_INVALIDATING_OPS = new Set(["setInnerHtml", "removeNode", "duplicateNode", "moveUp", "moveDown", "wrapInAnchor", "unwrapAnchor", "insertHtml"]);
 
 /** One other browser tab currently editing this same page — see the real-time collab effects
  * below. `patches` travels with the snapshot (reconciled against the live iframe) but isn't kept
@@ -102,10 +106,13 @@ interface PendingPatch {
     | "moveUp"
     | "moveDown"
     | "wrapInAnchor"
-    | "unwrapAnchor";
+    | "unwrapAnchor"
+    | "insertHtml";
   attrName?: string;
   styleProperty?: string;
   value?: string;
+  /** For op "insertHtml": where to splice `value` relative to `nodeId` — see ElementsPanel.tsx. */
+  position?: "before" | "after" | "prepend" | "append";
 }
 
 /** #rrggbb -> "rgba(r, g, b, alpha)" — used to build a shadow color with some transparency; falls back to black if the input isn't a valid 6-digit hex (e.g. mid-typing in the hex field). */
@@ -617,8 +624,7 @@ export function VisualEditorClient({
   pageId,
   pageRoute,
   previewOrigin: previewOriginFallback,
-  pages,
-  sites
+  pages
 }: {
   siteId: string;
   siteSlug: string;
@@ -626,7 +632,6 @@ export function VisualEditorClient({
   pageRoute: string;
   previewOrigin: string;
   pages: NavPage[];
-  sites: NavSite[];
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -634,6 +639,22 @@ export function VisualEditorClient({
   const [selected, setSelected] = useState<SelectedElement | null>(null);
   const [treeRoot, setTreeRoot] = useState<TreeNode | null>(null);
   const [mobileTab, setMobileTab] = useState<"layers" | "canvas" | "properties">("canvas");
+  // Left panel: "structure" is today's Pages+Layers content; "elements" is the scanned,
+  // drag-onto-canvas candidate list (see ElementsPanel.tsx).
+  const [leftTab, setLeftTab] = useState<"structure" | "elements">("structure");
+  const [reusableElements, setReusableElements] = useState<ReusableElement[]>([]);
+  // What's currently being dragged from the Elements panel — read by the drop handler once the
+  // bridge reports where it landed (see the "dropAccepted" message branch below). Not derived from
+  // dataTransfer: simplest to keep authorship of "what's being dragged" in the same state that
+  // already owns everything else here, rather than relying on a cross-frame payload round-trip.
+  const [draggingElement, setDraggingElement] = useState<ReusableElement | null>(null);
+  // The onMessage effect below is long-lived (deps [previewOrigin, pages]) so it can't close over
+  // draggingElement directly without going stale the moment a drag starts — same problem
+  // reconcileSnapshotRef solves for the collab SSE effect, same fix.
+  const draggingElementRef = useRef(draggingElement);
+  useEffect(() => {
+    draggingElementRef.current = draggingElement;
+  }, [draggingElement]);
   // Undo/redo: `stack[index]` is always the current patches array — every user action pushes a new
   // snapshot (truncating any redo future first), and undo/redo just moves the pointer. Kept as one
   // state object (not separate stack/index states) so a commit is always a single atomic update —
@@ -731,7 +752,16 @@ export function VisualEditorClient({
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== previewOrigin) return;
-      const data = event.data as { source?: string; type?: string; element?: SelectedElement; nodeId?: number; html?: string; root?: TreeNode };
+      const data = event.data as {
+        source?: string;
+        type?: string;
+        element?: SelectedElement;
+        nodeId?: number;
+        html?: string;
+        root?: TreeNode;
+        items?: ReusableElement[];
+        position?: "before" | "after" | "prepend" | "append";
+      };
       if (!data || data.source !== "igle-preview") return;
 
       if (data.type === "select" && data.element) {
@@ -745,6 +775,10 @@ export function VisualEditorClient({
         setTreeRoot(data.root);
       }
 
+      if (data.type === "reusableElements" && data.items) {
+        setReusableElements(data.items);
+      }
+
       if (data.type === "textEdited" && typeof data.nodeId === "number") {
         const nodeId = data.nodeId;
         const html = data.html ?? "";
@@ -753,6 +787,18 @@ export function VisualEditorClient({
           { nodeId, op: "setInnerHtml", value: html }
         ]);
         setStatus({ kind: "idle" });
+      }
+
+      if (data.type === "dropAccepted" && typeof data.nodeId === "number" && data.position) {
+        const dragged = draggingElementRef.current;
+        if (dragged) {
+          const nodeId = data.nodeId;
+          const position = data.position;
+          postToFrame({ type: "insertHtml", nodeId, position, html: dragged.html });
+          commitPatches((prev) => [...prev, { nodeId, op: "insertHtml", position, value: dragged.html }]);
+          setStatus({ kind: "idle" });
+        }
+        setDraggingElement(null);
       }
     }
     window.addEventListener("message", onMessage);
@@ -766,9 +812,12 @@ export function VisualEditorClient({
       // Every structural op (local, undo/redo replay, or a remote participant's via
       // replayPatchToFrame — all funnel through here) can shift which node id refers to what, so
       // the Layers tree is stale the instant one of these runs. One check here covers every call
-      // site instead of scattering a getTree request after each of them individually.
+      // site instead of scattering a getTree request after each of them individually. The Elements
+      // panel's scan goes stale for the same reason (new/removed/moved elements can create or
+      // destroy a repeating-block group), so it's refreshed on the same trigger.
       if (typeof message.type === "string" && TREE_INVALIDATING_OPS.has(message.type)) {
         iframeRef.current?.contentWindow?.postMessage({ source: "igle-editor", type: "getTree" }, previewOrigin);
+        iframeRef.current?.contentWindow?.postMessage({ source: "igle-editor", type: "getReusableElements" }, previewOrigin);
       }
     },
     [previewOrigin]
@@ -820,6 +869,9 @@ export function VisualEditorClient({
         break;
       case "unwrapAnchor":
         postToFrame({ type: "unwrapAnchor", nodeId: patch.nodeId });
+        break;
+      case "insertHtml":
+        postToFrame({ type: "insertHtml", nodeId: patch.nodeId, position: patch.position, html: patch.value ?? "" });
         break;
     }
   }
@@ -938,8 +990,9 @@ export function VisualEditorClient({
   function handleIframeLoad(): void {
     // Unconditional — covers first mount and a plain reload with nothing to replay (e.g. a bare
     // Discard), which the early-return below would otherwise skip entirely, leaving the Layers
-    // tree empty.
+    // tree (and the Elements panel's scan) empty.
     postToFrame({ type: "getTree" });
+    postToFrame({ type: "getReusableElements" });
     const toReplay = replayPatchesRef.current;
     if (!toReplay) return;
     replayPatchesRef.current = null;
@@ -1019,6 +1072,19 @@ export function VisualEditorClient({
    * current selection's immediate parent. */
   function selectNode(nodeId: number) {
     postToFrame({ type: "selectNode", nodeId });
+  }
+
+  /** Fires on the dragged row's own dragend — which the HTML5 DnD spec fires once the operation
+   * completes, whether or not a drop was actually accepted anywhere. On a SUCCESSFUL drop onto the
+   * canvas, the bridge's own "drop" handler posts "dropAccepted" to consume draggingElement — but
+   * that's an async postMessage from a different frame, and dragend can otherwise fire and clear
+   * draggingElement first, discarding it before that message arrives. Deferring the clear by one
+   * macrotask (a plain setTimeout 0) gives the already-in-flight postMessage room to land first;
+   * a few extra ms before the drag source visually "lets go" is unnoticeable, and the dropAccepted
+   * handler clears draggingElement itself the instant it actually consumes it, so a *successful*
+   * drop never waits on this timer at all — only a cancelled/missed one does. */
+  function clearDraggingElement() {
+    setTimeout(() => setDraggingElement(null), 0);
   }
 
   function queueAttr(nodeId: number, attrName: string, value: string) {
@@ -1299,16 +1365,27 @@ export function VisualEditorClient({
       </div>
       <div className="visual-editor-grid" data-active-tab={mobileTab}>
         <div className="card visual-editor-layers">
-          <LayersPanel
-            siteId={siteId}
-            pageId={pageId}
-            sites={sites}
-            pages={pages}
-            treeRoot={treeRoot}
-            selectedNodeId={selected?.nodeId ?? null}
-            selectedAncestorIds={selected ? selected.ancestors.map((ancestor) => ancestor.nodeId) : []}
-            onSelectNode={selectNode}
-          />
+          <div className="segmented" style={{ marginBottom: 10 }}>
+            <button type="button" className={leftTab === "structure" ? "active" : ""} onClick={() => setLeftTab("structure")}>
+              Structure
+            </button>
+            <button type="button" className={leftTab === "elements" ? "active" : ""} onClick={() => setLeftTab("elements")}>
+              Elements
+            </button>
+          </div>
+          {leftTab === "structure" ? (
+            <LayersPanel
+              siteId={siteId}
+              pageId={pageId}
+              pages={pages}
+              treeRoot={treeRoot}
+              selectedNodeId={selected?.nodeId ?? null}
+              selectedAncestorIds={selected ? selected.ancestors.map((ancestor) => ancestor.nodeId) : []}
+              onSelectNode={selectNode}
+            />
+          ) : (
+            <ElementsPanel items={reusableElements} onDragStart={setDraggingElement} onDragEnd={clearDraggingElement} />
+          )}
         </div>
 
         <div className="visual-editor-canvas">
@@ -1704,9 +1781,8 @@ export function VisualEditorClient({
               <dt>Layers panel</dt>
               <dd>
                 Shows this page&apos;s structure as a tree — click any row to select that element, same as clicking it
-                directly in the preview. Expands automatically around whatever you&apos;ve selected. The site name at
-                the top switches you to another site&apos;s own page list; the page list below it switches pages
-                within this site.
+                directly in the preview. Expands automatically around whatever you&apos;ve selected. The page list
+                above it switches pages within this site.
               </dd>
               <dt>Links</dt>
               <dd>Linking to one of this site&apos;s own pages stays correct no matter where the site ends up hosted.</dd>

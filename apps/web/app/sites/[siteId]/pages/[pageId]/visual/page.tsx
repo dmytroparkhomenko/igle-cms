@@ -24,11 +24,6 @@ export default async function VisualEditorPage({ params }: { params: Promise<{ s
     .filter((item) => item.siteId === site.id && !item.deletedAt)
     .map((item) => ({ id: item.id, route: item.route.replace(/\/index$/i, "/") || "/", internalName: item.internalName }))
     .sort((a, b) => a.route.localeCompare(b.route));
-  // Slim projection for the Layers panel's site switcher — just enough to list and link to every
-  // other site, not the full SiteRecord the main /sites list needs.
-  const sites = (await runtime.siteService.list(actor))
-    .map((item) => ({ id: item.id, name: item.metadata.name, slug: item.slug }))
-    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <>
@@ -54,7 +49,6 @@ export default async function VisualEditorPage({ params }: { params: Promise<{ s
           pageRoute={page.route}
           previewOrigin={previewOrigin}
           pages={pages}
-          sites={sites}
         />
       )}
     </>

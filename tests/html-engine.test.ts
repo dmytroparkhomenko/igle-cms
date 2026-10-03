@@ -323,6 +323,63 @@ describe("applyStructuralPatches", () => {
     // nodeId 5 is the real <a>, a sibling of the div — not wrapped by anything.
     expect(() => applyStructuralPatches(DIV_WITH_IMG_AND_LINK, [{ nodeId: 5, op: "unwrapAnchor" }])).toThrow(IgleError);
   });
+
+  it("insertHtml 'before' adds a new preceding sibling", () => {
+    const result = applyStructuralPatches(THREE_SECTIONS, [
+      { nodeId: 4, op: "insertHtml", position: "before", value: '<section id="x">X</section>' }
+    ]);
+    expect(result.html).toBe(
+      '<html><head></head><body><section id="a">A</section><section id="x">X</section><section id="b">B</section><section id="c">C</section></body></html>'
+    );
+  });
+
+  it("insertHtml 'after' adds a new following sibling", () => {
+    const result = applyStructuralPatches(THREE_SECTIONS, [
+      { nodeId: 5, op: "insertHtml", position: "after", value: '<section id="x">X</section>' }
+    ]);
+    expect(result.html).toBe(
+      '<html><head></head><body><section id="a">A</section><section id="b">B</section><section id="c">C</section><section id="x">X</section></body></html>'
+    );
+  });
+
+  it("insertHtml 'prepend' adds a new first child", () => {
+    // nodeId 3 is the div; its only current child, the img, must end up second.
+    const result = applyStructuralPatches(DIV_WITH_IMG_AND_LINK, [
+      { nodeId: 3, op: "insertHtml", position: "prepend", value: "<span>new</span>" }
+    ]);
+    expect(result.html).toContain("<div><span>new</span><img src=\"x.png\"></div>");
+  });
+
+  it("insertHtml 'append' adds a new last child", () => {
+    // nodeId 2 is <body> itself — appending lands right before </body>, after both existing children.
+    const result = applyStructuralPatches(DIV_WITH_IMG_AND_LINK, [
+      { nodeId: 2, op: "insertHtml", position: "append", value: '<p id="new">new</p>' }
+    ]);
+    expect(result.html).toBe(
+      '<html><head></head><body><div><img src="x.png"></div><a href="https://real.example/x">Real link</a><p id="new">new</p></body></html>'
+    );
+  });
+
+  it("insertHtml sanitizes its value the same way setInnerHtml does — no script tags or stray data-igle-node markers", () => {
+    const result = applyStructuralPatches(THREE_SECTIONS, [
+      {
+        nodeId: 5,
+        op: "insertHtml",
+        position: "after",
+        value: '<p data-igle-node="9">Hi<script>alert(1)</script></p>'
+      }
+    ]);
+    expect(result.html).not.toContain("data-igle-node");
+    expect(result.html).not.toContain("<script>");
+    expect(result.html).toContain("<p>Hi</p>");
+  });
+
+  it("insertHtml 'append'/'prepend' refuses a void element that cannot contain children", () => {
+    // nodeId 4 is the <img> — has no innerRange (no end tag) for setInnerHtml-style helpers to use.
+    expect(() => applyStructuralPatches(DIV_WITH_IMG_AND_LINK, [{ nodeId: 4, op: "insertHtml", position: "append", value: "<span>x</span>" }])).toThrow(
+      IgleError
+    );
+  });
 });
 
 describe("findTaggedCtaLinks", () => {

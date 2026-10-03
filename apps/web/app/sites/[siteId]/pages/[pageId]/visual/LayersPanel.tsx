@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { NavPage, NavSite, TreeNode } from "./VisualEditorClient";
+import type { NavPage, TreeNode } from "./VisualEditorClient";
 
 /** body + its direct children expanded, everything deeper collapsed — mirrors how a fresh VS Code
  * explorer or Figma layer tree starts: the root is open, one level in is visible, no further. */
@@ -70,44 +70,15 @@ function TreeRow({
   );
 }
 
-function SiteSwitcher({ siteId, sites }: { siteId: string; sites: NavSite[] }) {
-  const current = sites.find((site) => site.id === siteId);
-  const others = sites.filter((site) => site.id !== siteId);
-  return (
-    <details>
-      <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-        {current?.name ?? "Switch site"}{" "}
-        <span className="muted" style={{ fontWeight: 400, fontSize: 12 }}>
-          &middot; switch site
-        </span>
-      </summary>
-      <div style={{ display: "grid", gap: 2, marginTop: 8 }}>
-        {others.length === 0 ? (
-          <p className="muted" style={{ fontSize: 12, margin: 0 }}>
-            No other sites.
-          </p>
-        ) : (
-          others.map((site) => (
-            <Link key={site.id} href={`/sites/${site.id}`} className="layers-row">
-              {site.name}
-            </Link>
-          ))
-        )}
-      </div>
-    </details>
-  );
-}
-
 /**
- * Left-sidebar panel: site switcher + this site's page list + a live Layers tree of the current
- * page. All three are "VS Code/Figma-flavored" navigation on top of data the rest of the app
- * already has — see visual/page.tsx for where `sites`/`pages` come from, and buildTree (the
- * preview bridge) for where `treeRoot` comes from.
+ * Left-sidebar panel: this site's page list + a live Layers tree of the current page — both
+ * "VS Code/Figma-flavored" navigation on top of data the rest of the app already has. See
+ * visual/page.tsx for where `pages` comes from, and buildTree (the preview bridge) for where
+ * `treeRoot` comes from.
  */
 export function LayersPanel({
   siteId,
   pageId,
-  sites,
   pages,
   treeRoot,
   selectedNodeId,
@@ -116,7 +87,6 @@ export function LayersPanel({
 }: {
   siteId: string;
   pageId: string;
-  sites: NavSite[];
   pages: NavPage[];
   treeRoot: TreeNode | null;
   selectedNodeId: number | null;
@@ -155,8 +125,6 @@ export function LayersPanel({
 
   return (
     <div style={{ display: "grid", gap: 10 }}>
-      <SiteSwitcher siteId={siteId} sites={sites} />
-
       <div className="settings-section">
         <p className="settings-section-title" style={{ margin: 0 }}>
           Pages
