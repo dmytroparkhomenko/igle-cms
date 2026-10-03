@@ -1093,13 +1093,32 @@ select:disabled {
   flex-direction: column;
 }
 
-/* ===== Visual editor: full screen includes the edit sidebar, not just the preview ===== */
+/* ===== Visual editor: Layers | Canvas | Properties, full screen includes all three ===== */
 
 .visual-editor-grid {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 240px 1fr 320px;
+  grid-template-areas: "layers canvas properties";
   gap: 16px;
   align-items: start;
+}
+
+.visual-editor-layers {
+  grid-area: layers;
+}
+
+.visual-editor-canvas {
+  grid-area: canvas;
+}
+
+.visual-editor-properties {
+  grid-area: properties;
+}
+
+.visual-editor-layers,
+.visual-editor-properties {
+  max-height: 70vh;
+  overflow-y: auto;
 }
 
 .visual-editor-shell.is-fullscreen {
@@ -1110,10 +1129,84 @@ select:disabled {
   height: 100vh;
 }
 
+.visual-editor-shell.is-fullscreen .visual-editor-layers,
+.visual-editor-shell.is-fullscreen .visual-editor-properties {
+  max-height: calc(100vh - 96px);
+}
+
+/* Hidden ≥900px — the grid shows all three columns side by side there and needs no tab switch. */
+.visual-editor-mobile-tabs {
+  display: none;
+  margin-bottom: 12px;
+}
+
 @media (max-width: 900px) {
   .visual-editor-grid {
-    grid-template-columns: 1fr;
+    display: block;
   }
+  .visual-editor-mobile-tabs {
+    display: flex;
+  }
+  .visual-editor-grid[data-active-tab="canvas"] .visual-editor-layers,
+  .visual-editor-grid[data-active-tab="canvas"] .visual-editor-properties {
+    display: none;
+  }
+  .visual-editor-grid[data-active-tab="layers"] .visual-editor-canvas,
+  .visual-editor-grid[data-active-tab="layers"] .visual-editor-properties {
+    display: none;
+  }
+  .visual-editor-grid[data-active-tab="properties"] .visual-editor-canvas,
+  .visual-editor-grid[data-active-tab="properties"] .visual-editor-layers {
+    display: none;
+  }
+}
+
+/* ===== Layers panel tree rows — same hover/active language as .list-row, denser for a tree ===== */
+
+.layers-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12.5px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.layers-row:hover {
+  background: var(--bg);
+}
+
+.layers-row.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.layers-row-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  width: 14px;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.layers-row-tag {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.layers-row-label {
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== Rich text editor (TipTap) — "Edit as HTML" modal's Rich text tab ===== */

@@ -248,11 +248,62 @@ const BRIDGE_SCRIPT = `(function () {
       textTransform: computed.textTransform,
       fontFamily: computed.fontFamily,
       fontSize: computed.fontSize,
+      width: computed.width,
+      height: computed.height,
+      margin: computed.marginTop,
+      display: computed.display,
+      alignItems: computed.alignItems,
+      justifyContent: computed.justifyContent,
+      opacity: computed.opacity,
+      filter: computed.filter,
+      boxShadow: computed.boxShadow,
       dataIgleCta: el.getAttribute("data-igle-cta"),
       wrappedInCta: Boolean(wrappingCtaAnchor(el)),
       hasPrevSibling: siblingIndex > 0,
       hasNextSibling: siblingIndex !== -1 && siblingIndex < siblingElements.length - 1,
       ancestors: ancestors
+    };
+  }
+
+  // Labels a tree row something more useful than the bare tag name: an id attr is the strongest
+  // hint of "what is this", then the first class token, then a short peek at the element's own
+  // direct text (not its descendants' — that would make every ancestor of a text node show the
+  // same label as its innermost child). Empty string falls through to just the tag name alone in
+  // the tree UI, which is never ambiguous since the tag is always shown as a prefix there.
+  function elementLabel(el) {
+    var idAttr = el.getAttribute("id");
+    if (idAttr) return "#" + idAttr;
+    var classAttr = el.getAttribute("class");
+    if (classAttr) {
+      var firstClass = classAttr.split(/\\s+/).filter(function (token) { return token; })[0];
+      if (firstClass) return "." + firstClass;
+    }
+    var text = "";
+    for (var i = 0; i < el.childNodes.length; i++) {
+      if (el.childNodes[i].nodeType === 3) text += el.childNodes[i].textContent;
+    }
+    text = text.replace(/\\s+/g, " ").replace(/^\\s+|\\s+$/g, "");
+    return text.length > 30 ? text.slice(0, 30) + "\\u2026" : text;
+  }
+
+  // Full-page structure for the Layers panel — walks from document.body down, skipping <script>
+  // and <style> (never visible/selectable in the canvas, so they'd just be dead rows; this also
+  // quietly excludes the affiliate-cloak <script> injectAffiliateCloak adds before annotation runs,
+  // which otherwise picks up a real data-igle-node id like any other element). Requested fresh by
+  // the parent after every structural edit rather than diffed client-side, since node ids are only
+  // valid for one snapshot of the document (see walkElementsWithId on the server).
+  function buildTree(el) {
+    var children = [];
+    for (var i = 0; i < el.children.length; i++) {
+      var child = el.children[i];
+      if (child.tagName === "SCRIPT" || child.tagName === "STYLE") continue;
+      children.push(buildTree(child));
+    }
+    return {
+      nodeId: Number(el.getAttribute("data-igle-node")),
+      tagName: el.tagName.toLowerCase(),
+      label: elementLabel(el),
+      children: children
     };
   }
 
@@ -436,6 +487,10 @@ const BRIDGE_SCRIPT = `(function () {
     if (msg.type === "selectNode") {
       var targetEl = document.querySelector('[data-igle-node="' + msg.nodeId + '"]');
       if (targetEl) parent.postMessage({ source: "igle-preview", type: "select", element: describe(targetEl) }, "*");
+    }
+
+    if (msg.type === "getTree") {
+      parent.postMessage({ source: "igle-preview", type: "tree", root: buildTree(document.body) }, "*");
     }
 
     if (msg.type === "removeNode") {

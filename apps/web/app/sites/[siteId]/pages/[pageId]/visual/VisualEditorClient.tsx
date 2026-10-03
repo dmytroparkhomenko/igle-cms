@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { PreviewFrame } from "../../../../../PreviewFrame";
+import { LayersPanel } from "./LayersPanel";
 import { RichTextEditor, canUseRichText } from "./RichTextEditor";
 
 interface AncestorRef {
@@ -29,6 +30,15 @@ interface SelectedElement {
   textTransform: string | null;
   fontFamily: string | null;
   fontSize: string | null;
+  width: string | null;
+  height: string | null;
+  margin: string | null;
+  display: string | null;
+  alignItems: string | null;
+  justifyContent: string | null;
+  opacity: string | null;
+  filter: string | null;
+  boxShadow: string | null;
   dataIgleCta: string | null;
   /** True when this element's own parent is the <a data-igle-cta> wrapper "Mark as affiliate
    * link" creates for a non-<a> element (see toggleAffiliateCta) — the marker itself lives on that
@@ -39,11 +49,35 @@ interface SelectedElement {
   ancestors: AncestorRef[];
 }
 
-interface NavPage {
+export interface NavPage {
   id: string;
   route: string;
   internalName: string;
 }
+
+/** A site other than the current one, for the Layers panel's site switcher — deliberately slim
+ * compared to SiteRecord, since all the switcher needs is something to list and link to. */
+export interface NavSite {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/** One page's full element structure for the Layers panel — see the bridge's buildTree(). Node ids
+ * are only valid for the snapshot they came from (see walkElementsWithId on the server), so this is
+ * always re-requested after a structural edit rather than patched incrementally on the client. */
+export interface TreeNode {
+  nodeId: number;
+  tagName: string;
+  label: string;
+  children: TreeNode[];
+}
+
+/** Structural ops that can add/remove elements or otherwise shift which node id refers to what —
+ * after any of these, the Layers tree is stale and must be re-fetched (see postToFrame below).
+ * setInnerHtml is included even though it targets one existing node: Edit-as-HTML and double-click
+ * text commits can add or remove child elements, not just change text. */
+const TREE_INVALIDATING_OPS = new Set(["setInnerHtml", "removeNode", "duplicateNode", "moveUp", "moveDown", "wrapInAnchor", "unwrapAnchor"]);
 
 /** One other browser tab currently editing this same page — see the real-time collab effects
  * below. `patches` travels with the snapshot (reconciled against the live iframe) but isn't kept
@@ -132,14 +166,45 @@ function StyleControls({
   queueStyle: (property: string, value: string) => void;
   queueHoverStyle: (property: string, value: string) => void;
 }) {
+  const [width, setWidth] = useState(() => Math.round(parseFloat(selected.width ?? "0")) || 0);
+  const [height, setHeight] = useState(() => Math.round(parseFloat(selected.height ?? "0")) || 0);
+  const [padding, setPadding] = useState(() => Math.round(parseFloat(selected.padding ?? "0")) || 0);
+  const [margin, setMargin] = useState(() => Math.round(parseFloat(selected.margin ?? "0")) || 0);
   const [borderWidth, setBorderWidth] = useState(() => Math.round(parseFloat(selected.borderWidth ?? "0")) || 0);
   const [borderColor, setBorderColor] = useState(selected.borderColor ?? "#000000");
+  const [opacity, setOpacity] = useState(() => {
+    const parsed = Math.round(parseFloat(selected.opacity ?? "1") * 100);
+    return Number.isFinite(parsed) ? parsed : 100;
+  });
+  const [blur, setBlur] = useState(() => {
+    const match = /blur\((\d+(?:\.\d+)?)px\)/.exec(selected.filter ?? "");
+    return match ? Math.round(parseFloat(match[1]!)) : 0;
+  });
   const [borderRadius, setBorderRadius] = useState(() => Math.round(parseFloat(selected.borderRadius ?? "0")) || 0);
-  const [padding, setPadding] = useState(() => Math.round(parseFloat(selected.padding ?? "0")) || 0);
   const [shadowSize, setShadowSize] = useState<ShadowSize>("none");
   const [shadowColor, setShadowColor] = useState("#000000");
   const [hoverBg, setHoverBg] = useState("#000000");
   const [hoverText, setHoverText] = useState("#ffffff");
+
+  function applyWidth(next: number) {
+    setWidth(next);
+    queueStyle("width", `${next}px`);
+  }
+
+  function applyHeight(next: number) {
+    setHeight(next);
+    queueStyle("height", `${next}px`);
+  }
+
+  function applyPadding(next: number) {
+    setPadding(next);
+    queueStyle("padding", `${next}px`);
+  }
+
+  function applyMargin(next: number) {
+    setMargin(next);
+    queueStyle("margin", `${next}px`);
+  }
 
   function applyBorder(nextWidth: number, nextColor: string) {
     setBorderWidth(nextWidth);
@@ -153,14 +218,24 @@ function StyleControls({
     }
   }
 
+  function applyOpacity(next: number) {
+    const clamped = Math.min(100, Math.max(0, next));
+    setOpacity(clamped);
+    queueStyle("opacity", String(clamped / 100));
+  }
+
+  function applyBlur(next: number) {
+    const clamped = Math.max(0, next);
+    setBlur(clamped);
+    // Replaces the whole filter property rather than composing with any other filter function the
+    // page's own CSS might already set on this element — same simplification already made for
+    // background-color unconditionally clearing background-image above.
+    queueStyle("filter", clamped > 0 ? `blur(${clamped}px)` : "none");
+  }
+
   function applyBorderRadius(next: number) {
     setBorderRadius(next);
     queueStyle("border-radius", `${next}px`);
-  }
-
-  function applyPadding(next: number) {
-    setPadding(next);
-    queueStyle("padding", `${next}px`);
   }
 
   function applyShadow(nextSize: ShadowSize, nextColor: string) {
@@ -174,85 +249,108 @@ function StyleControls({
     queueStyle("box-shadow", `0 ${preset.offsetY}px ${preset.blur}px ${hexToRgba(nextColor, preset.alpha)}`);
   }
 
+  const isFlexOrGridContainer = selected.display ? ["flex", "inline-flex", "grid", "inline-grid"].includes(selected.display) : false;
+
   return (
     <>
-      <div style={{ display: "grid", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+      <div className="settings-section">
         <p className="settings-section-title" style={{ margin: 0 }}>
-          Border
+          Size
         </p>
         <div className="field-row">
           <div className="field">
             <label className="muted" style={{ fontSize: 12.5 }}>
               Width (px)
             </label>
-            <input
-              type="number"
-              min={0}
-              max={20}
-              value={borderWidth}
-              onChange={(event) => applyBorder(Math.max(0, Number(event.target.value) || 0), borderColor)}
-              style={{ width: 70 }}
-            />
+            <input type="number" min={0} value={width} onChange={(event) => applyWidth(Math.max(0, Number(event.target.value) || 0))} style={{ width: 70 }} />
           </div>
-          <ColorField label="Color" value={borderColor} onChange={(hex) => applyBorder(borderWidth, hex)} />
           <div className="field">
             <label className="muted" style={{ fontSize: 12.5 }}>
-              Corner radius (px)
+              Height (px)
+            </label>
+            <input type="number" min={0} value={height} onChange={(event) => applyHeight(Math.max(0, Number(event.target.value) || 0))} style={{ width: 70 }} />
+          </div>
+        </div>
+        <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+          Setting an explicit size freezes this element at whatever it renders as right now — it won&apos;t resize with the window/viewport anymore.
+        </p>
+      </div>
+
+      <div className="settings-section">
+        <p className="settings-section-title" style={{ margin: 0 }}>
+          Spacing
+        </p>
+        <div className="field-row">
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Padding, all sides (px)
             </label>
             <input
               type="number"
               min={0}
               max={200}
-              value={borderRadius}
-              onChange={(event) => applyBorderRadius(Math.max(0, Number(event.target.value) || 0))}
+              value={padding}
+              onChange={(event) => applyPadding(Math.max(0, Number(event.target.value) || 0))}
+              style={{ width: 70 }}
+            />
+          </div>
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Margin, all sides (px)
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={200}
+              value={margin}
+              onChange={(event) => applyMargin(Math.max(0, Number(event.target.value) || 0))}
               style={{ width: 70 }}
             />
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+      <div className="settings-section">
         <p className="settings-section-title" style={{ margin: 0 }}>
-          Spacing
-        </p>
-        <div className="field">
-          <label className="muted" style={{ fontSize: 12.5 }}>
-            Padding, all sides (px)
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={200}
-            value={padding}
-            onChange={(event) => applyPadding(Math.max(0, Number(event.target.value) || 0))}
-            style={{ width: 70 }}
-          />
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-        <p className="settings-section-title" style={{ margin: 0 }}>
-          Shadow
+          Alignment
         </p>
         <div className="field-row">
           <div className="field">
             <label className="muted" style={{ fontSize: 12.5 }}>
-              Size
+              Align items
             </label>
-            <select value={shadowSize} onChange={(event) => applyShadow(event.target.value as ShadowSize, shadowColor)}>
-              <option value="none">None</option>
-              <option value="small">Small</option>
-              <option value="medium">Medium</option>
-              <option value="large">Large</option>
+            <select defaultValue={selected.alignItems ?? "normal"} onChange={(event) => queueStyle("align-items", event.target.value)}>
+              <option value="normal">Default</option>
+              <option value="flex-start">Start</option>
+              <option value="center">Center</option>
+              <option value="flex-end">End</option>
+              <option value="stretch">Stretch</option>
             </select>
           </div>
-          {shadowSize !== "none" ? <ColorField label="Color" value={shadowColor} onChange={(hex) => applyShadow(shadowSize, hex)} /> : null}
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Justify content
+            </label>
+            <select defaultValue={selected.justifyContent ?? "normal"} onChange={(event) => queueStyle("justify-content", event.target.value)}>
+              <option value="normal">Default</option>
+              <option value="flex-start">Start</option>
+              <option value="center">Center</option>
+              <option value="flex-end">End</option>
+              <option value="space-between">Space between</option>
+              <option value="space-around">Space around</option>
+            </select>
+          </div>
         </div>
+        {!isFlexOrGridContainer ? (
+          <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+            This element isn&apos;t a flex/grid container (display: {selected.display ?? "unknown"}), so these won&apos;t have a visible effect here.
+          </p>
+        ) : null}
       </div>
 
-      <div style={{ display: "grid", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+      <div className="settings-section">
         <p className="settings-section-title" style={{ margin: 0 }}>
-          Font
+          Typography
         </p>
         <div className="field-row">
           <div className="field">
@@ -320,7 +418,102 @@ function StyleControls({
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+      <div className="settings-section">
+        <p className="settings-section-title" style={{ margin: 0 }}>
+          Colors
+        </p>
+        <div className="field-row">
+          <ColorField label="Text" value={selected.color ?? "#000000"} onChange={(hex) => queueStyle("color", hex)} />
+          <ColorField
+            label="Background"
+            value={selected.backgroundColor ?? "#ffffff"}
+            onChange={(hex) => {
+              queueStyle("background-color", hex);
+              // Many real CTA buttons paint their background with a gradient/image, not a flat
+              // color — background-image always renders on top of background-color, so without
+              // this a background color change here would look like it did nothing on exactly
+              // those buttons.
+              queueStyle("background-image", "none");
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <p className="settings-section-title" style={{ margin: 0 }}>
+          Border
+        </p>
+        <div className="field-row">
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Width (px)
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={borderWidth}
+              onChange={(event) => applyBorder(Math.max(0, Number(event.target.value) || 0), borderColor)}
+              style={{ width: 70 }}
+            />
+          </div>
+          <ColorField label="Color" value={borderColor} onChange={(hex) => applyBorder(borderWidth, hex)} />
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <p className="settings-section-title" style={{ margin: 0 }}>
+          Effects
+        </p>
+        <div className="field-row">
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Opacity (%)
+            </label>
+            <input type="number" min={0} max={100} value={opacity} onChange={(event) => applyOpacity(Number(event.target.value) || 0)} style={{ width: 70 }} />
+          </div>
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Blur (px)
+            </label>
+            <input type="number" min={0} max={50} value={blur} onChange={(event) => applyBlur(Math.max(0, Number(event.target.value) || 0))} style={{ width: 70 }} />
+          </div>
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Corner radius (px)
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={200}
+              value={borderRadius}
+              onChange={(event) => applyBorderRadius(Math.max(0, Number(event.target.value) || 0))}
+              style={{ width: 70 }}
+            />
+          </div>
+        </div>
+        <div className="field-row">
+          <div className="field">
+            <label className="muted" style={{ fontSize: 12.5 }}>
+              Shadow size
+            </label>
+            <select value={shadowSize} onChange={(event) => applyShadow(event.target.value as ShadowSize, shadowColor)}>
+              <option value="none">None</option>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+          </div>
+          {shadowSize !== "none" ? <ColorField label="Shadow color" value={shadowColor} onChange={(hex) => applyShadow(shadowSize, hex)} /> : null}
+        </div>
+        {selected.boxShadow && selected.boxShadow !== "none" ? (
+          <p className="muted" style={{ margin: 0, fontSize: 11, wordBreak: "break-all" }}>
+            Currently: {selected.boxShadow}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="settings-section">
         <p className="settings-section-title" style={{ margin: 0 }}>
           Hover
         </p>
@@ -424,7 +617,8 @@ export function VisualEditorClient({
   pageId,
   pageRoute,
   previewOrigin: previewOriginFallback,
-  pages
+  pages,
+  sites
 }: {
   siteId: string;
   siteSlug: string;
@@ -432,11 +626,14 @@ export function VisualEditorClient({
   pageRoute: string;
   previewOrigin: string;
   pages: NavPage[];
+  sites: NavSite[];
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const [interactive, setInteractive] = useState(false);
   const [selected, setSelected] = useState<SelectedElement | null>(null);
+  const [treeRoot, setTreeRoot] = useState<TreeNode | null>(null);
+  const [mobileTab, setMobileTab] = useState<"layers" | "canvas" | "properties">("canvas");
   // Undo/redo: `stack[index]` is always the current patches array — every user action pushes a new
   // snapshot (truncating any redo future first), and undo/redo just moves the pointer. Kept as one
   // state object (not separate stack/index states) so a commit is always a single atomic update —
@@ -534,7 +731,7 @@ export function VisualEditorClient({
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (event.origin !== previewOrigin) return;
-      const data = event.data as { source?: string; type?: string; element?: SelectedElement; nodeId?: number; html?: string };
+      const data = event.data as { source?: string; type?: string; element?: SelectedElement; nodeId?: number; html?: string; root?: TreeNode };
       if (!data || data.source !== "igle-preview") return;
 
       if (data.type === "select" && data.element) {
@@ -542,6 +739,10 @@ export function VisualEditorClient({
         setLinkHrefDraft(data.element.href ?? "");
         const matched = matchPageForHref(data.element.href, pages);
         setLinkTarget(matched ? matched.id : CUSTOM_LINK_TARGET);
+      }
+
+      if (data.type === "tree" && data.root) {
+        setTreeRoot(data.root);
       }
 
       if (data.type === "textEdited" && typeof data.nodeId === "number") {
@@ -562,6 +763,13 @@ export function VisualEditorClient({
   const postToFrame = useCallback(
     (message: Record<string, unknown>) => {
       iframeRef.current?.contentWindow?.postMessage({ source: "igle-editor", ...message }, previewOrigin);
+      // Every structural op (local, undo/redo replay, or a remote participant's via
+      // replayPatchToFrame — all funnel through here) can shift which node id refers to what, so
+      // the Layers tree is stale the instant one of these runs. One check here covers every call
+      // site instead of scattering a getTree request after each of them individually.
+      if (typeof message.type === "string" && TREE_INVALIDATING_OPS.has(message.type)) {
+        iframeRef.current?.contentWindow?.postMessage({ source: "igle-editor", type: "getTree" }, previewOrigin);
+      }
     },
     [previewOrigin]
   );
@@ -728,6 +936,10 @@ export function VisualEditorClient({
   }, [connectionId, siteId, pageId, patches, selected?.nodeId]);
 
   function handleIframeLoad(): void {
+    // Unconditional — covers first mount and a plain reload with nothing to replay (e.g. a bare
+    // Discard), which the early-return below would otherwise skip entirely, leaving the Layers
+    // tree empty.
+    postToFrame({ type: "getTree" });
     const toReplay = replayPatchesRef.current;
     if (!toReplay) return;
     replayPatchesRef.current = null;
@@ -800,6 +1012,13 @@ export function VisualEditorClient({
   function selectParent() {
     if (!selected || selected.ancestors.length === 0) return;
     postToFrame({ type: "selectNode", nodeId: selected.ancestors[0]!.nodeId });
+  }
+
+  /** Row click in the Layers panel — same selectNode message the bridge already exposes for the
+   * existing "Select parent" button, just addressed at an arbitrary node instead of always the
+   * current selection's immediate parent. */
+  function selectNode(nodeId: number) {
+    postToFrame({ type: "selectNode", nodeId });
   }
 
   function queueAttr(nodeId: number, attrName: string, value: string) {
@@ -894,7 +1113,15 @@ export function VisualEditorClient({
     "letter-spacing": "letterSpacing",
     "text-transform": "textTransform",
     "font-family": "fontFamily",
-    "font-size": "fontSize"
+    "font-size": "fontSize",
+    width: "width",
+    height: "height",
+    margin: "margin",
+    "align-items": "alignItems",
+    "justify-content": "justifyContent",
+    opacity: "opacity",
+    filter: "filter",
+    "box-shadow": "boxShadow"
   };
 
   function queueStyle(property: string, value: string) {
@@ -1059,14 +1286,78 @@ export function VisualEditorClient({
 
   return (
     <div ref={shellRef} className={`visual-editor-shell ${isFullscreen ? "is-fullscreen" : ""}`}>
-      <div className="visual-editor-grid">
-        <div>
+      <div className="segmented visual-editor-mobile-tabs">
+        <button type="button" className={mobileTab === "layers" ? "active" : ""} onClick={() => setMobileTab("layers")}>
+          Layers
+        </button>
+        <button type="button" className={mobileTab === "canvas" ? "active" : ""} onClick={() => setMobileTab("canvas")}>
+          Canvas
+        </button>
+        <button type="button" className={mobileTab === "properties" ? "active" : ""} onClick={() => setMobileTab("properties")}>
+          Properties
+        </button>
+      </div>
+      <div className="visual-editor-grid" data-active-tab={mobileTab}>
+        <div className="card visual-editor-layers">
+          <LayersPanel
+            siteId={siteId}
+            pageId={pageId}
+            sites={sites}
+            pages={pages}
+            treeRoot={treeRoot}
+            selectedNodeId={selected?.nodeId ?? null}
+            selectedAncestorIds={selected ? selected.ancestors.map((ancestor) => ancestor.nodeId) : []}
+            onSelectNode={selectNode}
+          />
+        </div>
+
+        <div className="visual-editor-canvas">
           <div className="toolbar" style={{ marginBottom: 8 }}>
             <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
               <input type="checkbox" checked={interactive} onChange={(event) => setInteractive(event.target.checked)} />
               Interactive mode (scripts run, editing disabled)
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="button button-secondary"
+                style={{ fontSize: 12.5, padding: "7px 10px" }}
+                onClick={undo}
+                disabled={editHistory.index === 0 || status.kind === "saving"}
+                title="Undo (Ctrl/Cmd+Z)"
+                aria-label="Undo"
+              >
+                &#8630; Undo
+              </button>
+              <button
+                type="button"
+                className="button button-secondary"
+                style={{ fontSize: 12.5, padding: "7px 10px" }}
+                onClick={redo}
+                disabled={editHistory.index >= editHistory.stack.length - 1 || status.kind === "saving"}
+                title="Redo (Ctrl/Cmd+Shift+Z)"
+                aria-label="Redo"
+              >
+                &#8631; Redo
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={save}
+                disabled={status.kind === "saving" || patches.length === 0}
+                style={{ fontSize: 12.5, padding: "7px 10px" }}
+              >
+                {status.kind === "saving" ? "Saving…" : "Save changes"}
+              </button>
+              <button
+                className="button"
+                type="button"
+                onClick={discard}
+                style={{ background: "none", color: "var(--accent)", fontSize: 12.5, padding: "7px 10px" }}
+                disabled={patches.length === 0}
+              >
+                Discard
+              </button>
               {participants.length > 0 ? (
                 <div style={{ display: "flex", alignItems: "center" }} title={`Also editing: ${participants.map((participant) => participant.name).join(", ")}`}>
                   {participants.map((participant, index) => (
@@ -1136,6 +1427,9 @@ export function VisualEditorClient({
               </button>
             </div>
           </div>
+          {status.kind === "saved" || status.kind === "error" ? (
+            <p style={{ margin: "0 0 8px", fontSize: 12.5, color: status.kind === "error" ? "var(--warn)" : "var(--accent)" }}>{status.message}</p>
+          ) : null}
           <PreviewFrame
             reloadKey={reloadKey}
             frameRef={iframeRef}
@@ -1147,7 +1441,7 @@ export function VisualEditorClient({
           />
         </div>
 
-        <aside className="card" style={{ position: "sticky", top: 16 }}>
+        <aside className="card visual-editor-properties">
           {selected && selected.ancestors.length > 0 ? (
             <button type="button" className="button" style={{ background: "none", color: "var(--accent)", fontSize: 12, padding: "3px 0", marginBottom: 6 }} onClick={selectParent}>
               &uarr; Select parent &lt;{selected.ancestors[0]!.tagName}&gt;
@@ -1168,35 +1462,10 @@ export function VisualEditorClient({
             ) : null}
           </div>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 10, marginBottom: 10 }}>
-            <button
-              type="button"
-              className="button button-secondary"
-              style={{ fontSize: 12.5, padding: "9px 10px" }}
-              onClick={undo}
-              disabled={editHistory.index === 0 || status.kind === "saving"}
-              title="Undo (Ctrl/Cmd+Z)"
-              aria-label="Undo"
-            >
-              &#8630; Undo
-            </button>
-            <button
-              type="button"
-              className="button button-secondary"
-              style={{ fontSize: 12.5, padding: "9px 10px" }}
-              onClick={redo}
-              disabled={editHistory.index >= editHistory.stack.length - 1 || status.kind === "saving"}
-              title="Redo (Ctrl/Cmd+Shift+Z)"
-              aria-label="Redo"
-            >
-              &#8631; Redo
-            </button>
-          </div>
-
           {!interactive && selected ? (
-            <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
               {selected.tagName === "img" ? (
-                <form onSubmit={submitImageForm} style={{ display: "grid", gap: 8 }}>
+                <form onSubmit={submitImageForm} className="settings-section">
                   <p className="muted" style={{ margin: 0, fontSize: 12.5, wordBreak: "break-all" }}>
                     {selected.src}
                   </p>
@@ -1219,7 +1488,7 @@ export function VisualEditorClient({
               ) : null}
 
               {selected.tagName === "a" ? (
-                <div style={{ display: "grid", gap: 6, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+                <div className="settings-section">
                   <label className="muted" style={{ fontSize: 12.5 }}>
                     Links to
                   </label>
@@ -1247,7 +1516,7 @@ export function VisualEditorClient({
                 </div>
               ) : null}
 
-              <div style={{ display: "flex", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+              <div className="settings-section" style={{ display: "flex", gap: 8 }}>
                 <button
                   type="button"
                   className="button button-secondary"
@@ -1272,7 +1541,7 @@ export function VisualEditorClient({
                 </button>
               </div>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+              <div className="settings-section" style={{ display: "flex", gap: 8 }}>
                 <button type="button" className="button" style={{ background: "none", color: "var(--accent)", fontSize: 12.5 }} onClick={duplicateBlock}>
                   Duplicate block
                 </button>
@@ -1282,7 +1551,7 @@ export function VisualEditorClient({
               </div>
 
               {AFFILIATE_LINK_ALLOWED_TAGS.has(selected.tagName) || selected.dataIgleCta !== null || selected.wrappedInCta ? (
-                <div style={{ display: "grid", gap: 6, marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+                <div className="settings-section">
                   <p className="settings-section-title" style={{ margin: 0 }}>
                     Affiliate link
                   </p>
@@ -1305,59 +1574,16 @@ export function VisualEditorClient({
               ) : null}
 
               {selected.className ? (
-                <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+                <p className="muted" style={{ fontSize: 11.5, margin: 0 }}>
                   class: {selected.className}
                 </p>
               ) : null}
 
-              <details style={{ marginTop: 6, borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-                <summary className="muted" style={{ cursor: "pointer", fontSize: 12.5, fontWeight: 600 }}>
-                  Styling
-                </summary>
-                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  <p className="settings-section-title" style={{ margin: 0 }}>
-                    Colors
-                  </p>
-                  <div className="field-row">
-                    <ColorField label="Text" value={selected.color ?? "#000000"} onChange={(hex) => queueStyle("color", hex)} />
-                    <ColorField
-                      label="Background"
-                      value={selected.backgroundColor ?? "#ffffff"}
-                      onChange={(hex) => {
-                        queueStyle("background-color", hex);
-                        // Many real CTA buttons paint their background with a gradient/image, not a
-                        // flat color — background-image always renders on top of background-color,
-                        // so without this a background color change here would look like it did
-                        // nothing on exactly those buttons.
-                        queueStyle("background-image", "none");
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <StyleControls key={selected.nodeId} selected={selected} queueStyle={queueStyle} queueHoverStyle={queueHoverStyle} />
-              </details>
+              <StyleControls key={selected.nodeId} selected={selected} queueStyle={queueStyle} queueHoverStyle={queueHoverStyle} />
             </div>
           ) : null}
 
-          {interactive ? <p className="muted" style={{ fontSize: 12.5 }}>Turn off interactive mode to select and edit elements.</p> : null}
-
-          <div style={{ display: "flex", gap: 8, marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
-            <button className="button" type="button" onClick={save} disabled={status.kind === "saving" || patches.length === 0}>
-              {status.kind === "saving" ? "Saving…" : "Save changes"}
-            </button>
-            <button
-              className="button"
-              type="button"
-              onClick={discard}
-              style={{ background: "none", color: "var(--accent)" }}
-              disabled={patches.length === 0}
-            >
-              Discard
-            </button>
-          </div>
-          {status.kind === "saved" ? <p style={{ color: "var(--accent)", fontSize: 12.5 }}>{status.message}</p> : null}
-          {status.kind === "error" ? <p style={{ color: "var(--warn)", fontSize: 12.5 }}>{status.message}</p> : null}
+          {interactive ? <p className="muted" style={{ fontSize: 12.5, marginTop: 10 }}>Turn off interactive mode to select and edit elements.</p> : null}
         </aside>
       </div>
 
@@ -1475,6 +1701,13 @@ export function VisualEditorClient({
                 assistant, whatever) and it replaces the section exactly, not limited to elements that were already
                 there.
               </dd>
+              <dt>Layers panel</dt>
+              <dd>
+                Shows this page&apos;s structure as a tree — click any row to select that element, same as clicking it
+                directly in the preview. Expands automatically around whatever you&apos;ve selected. The site name at
+                the top switches you to another site&apos;s own page list; the page list below it switches pages
+                within this site.
+              </dd>
               <dt>Links</dt>
               <dd>Linking to one of this site&apos;s own pages stays correct no matter where the site ends up hosted.</dd>
               <dt>Move up &amp; Move down</dt>
@@ -1523,18 +1756,20 @@ export function VisualEditorClient({
                 element directly instead of wrapping (to avoid nesting anchors) — select the parent link instead if
                 you want the whole link cloaked.
               </dd>
-              <dt>Border, Spacing, Shadow, Font, Hover</dt>
+              <dt>Size, Spacing, Alignment, Typography, Colors, Border, Effects, Hover</dt>
               <dd>
                 Type a hex code directly (or use the swatch) for any color field. Changing the Background color also
                 clears any gradient/image background a button&apos;s class set — otherwise it would still show through
                 on top of the flat color. Every color and style change here is applied with <code>!important</code>,
                 since real button/CTA classes commonly set their own colors that way too and would otherwise still
-                win. Border, corner radius, padding, and Shadow apply immediately; Font (family/size), text align,
-                transform, and letter spacing commit when you click away from or change the field — font family only
-                works if that font is already loaded somewhere on the page, so match one already used elsewhere on
-                the site. Hover sets what the element changes to on mouseover — hover the live preview to check it,
-                since it can&apos;t be shown any other way; it always starts blank since a hover style can&apos;t be
-                read back from the page.
+                win. Size, Spacing, Border, and Effects (opacity, blur, corner radius, shadow) apply immediately;
+                Typography&apos;s family/size, text align, transform, and letter spacing commit when you click away
+                from or change the field — font family only works if that font is already loaded somewhere on the
+                page, so match one already used elsewhere on the site. Align items/Justify content only visibly do
+                anything on a flex or grid container — a hint shows under those controls when the selected element
+                isn&apos;t one. Hover sets what the element changes to on mouseover — hover the live preview to check
+                it, since it can&apos;t be shown any other way; it always starts blank since a hover style can&apos;t
+                be read back from the page.
               </dd>
             </dl>
           </div>
